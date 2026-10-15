@@ -152,7 +152,7 @@
     const acc = { name: file.name, orientation: clip.meta.orientation, frames: 0, lean: [Infinity, -Infinity], squat: 0, kneeL: 0, kneeR: 0, cadence: 0, events: {} };
     const offEvents = engine.on('*', (name, payload) => {
       if (!COUNTED.includes(name)) return;
-      const key = name === 'point' ? `point ${payload.side}` : name;
+      const key = name === 'point' || name === 'slip' ? `${name} ${payload.side}` : name === 'strike' ? `strike ${payload.type}` : name === 'stance' ? `stance ${payload.stance}` : name;
       acc.events[key] = (acc.events[key] || 0) + 1;
     });
     const off = engine.on('frame', (snap) => {
@@ -177,8 +177,9 @@
     say(acc.frames ? `Replay done: ${acc.frames} calibrated frames.` : 'Replay done, but the clip never calibrated. Start clips standing still.');
   });
 
-  const COUNTED = ['step', 'run_start', 'run_end', 'turn_left', 'turn_right', 'lean_left', 'lean_right', 'point', 'turn_around', 'wave'];
-  const EVENT_ROWS = ['step', 'run_start', 'run_end', 'turn_left', 'turn_right', 'lean_left', 'lean_right', 'point left', 'point right', 'turn_around', 'wave'];
+  const COUNTED = ['step', 'run_start', 'run_end', 'turn_left', 'turn_right', 'lean_left', 'lean_right', 'point', 'turn_around', 'wave', 'strike', 'slip', 'stance', 'squat', 'drive_up'];
+  const EVENT_ROWS = ['step', 'run_start', 'run_end', 'turn_left', 'turn_right', 'lean_left', 'lean_right', 'point left', 'point right', 'turn_around', 'wave',
+    'strike jab', 'strike cross', 'strike hook', 'strike uppercut', 'strike down', 'slip left', 'slip right', 'stance orthodox', 'stance southpaw', 'squat', 'drive_up'];
 
   function renderStats() {
     const el = $('stats');

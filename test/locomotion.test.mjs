@@ -243,17 +243,18 @@ test('hidden knees pause step detection', () => {
   assert.ok(r.events.some((e) => e.name === 'step' && e.t > 10500), 'steps resume');
 });
 
-test('calibration move test runs on the locomotion detectors', () => {
+test('calibration move test runs on the locomotion and combat detectors', () => {
   const script = scriptMotion([
     moves.march(5, 8), moves.highKnees(8.5, 10.5),
     moves.turn(11, 13.5, 'left'), moves.turn(14, 16.5, 'right'),
     moves.point(17, 18.2, 'left'), moves.point(19, 20.2, 'right'),
+    moves.squat(21, 0.3), moves.guard(23.5, 27), moves.punch(24.5, 'left'), moves.punch(25.5, 'right'),
   ]);
   for (const [name, r] of Object.entries(runAll(script, { moveTest: true }))) {
     const done = r.events.find((e) => e.name === 'calibrated');
     assert.ok(done, `${name}: move test never finished`);
-    assert.ok(done.t > 19000 && done.t < 20200, `${name}: finished at ${done.t}`);
-    assert.equal(done.payload.skippedTests, 2, 'squat and jab-cross wait for the combat module');
+    assert.ok(done.t > 25500 && done.t < 26500, `${name}: finished at ${done.t}`);
+    assert.equal(done.payload.skippedTests, 0, 'every prompt has its detector');
   }
 });
 

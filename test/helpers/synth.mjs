@@ -220,6 +220,34 @@ function armPose(start, end, { left, right, rampS = 0.25, expected = {} }) {
 }
 
 const POINT = { a: Math.PI / 2, f: 0, a2: Math.PI / 2, f2: 0 };
+// Fighting poses. Guard: elbows down and in front, fists up by the cheeks.
+export const GUARD = { a: 0.25, f: 0.55, a2: Math.PI + 0.55, f2: 0.25 };
+const STRAIGHT = { a: Math.PI / 2 - 0.12, f: Math.PI / 2 - 0.15, a2: Math.PI / 2 - 0.08, f2: Math.PI / 2 - 0.05 }; // fist at the camera, shoulder height
+const HOOK_OUT = { a: Math.PI / 2 - 0.1, f: 0.1, a2: Math.PI / 2 - 0.1, f2: 0.1 + Math.PI / 2 }; // elbow up and out, bent 90
+const HOOK_IN = { a: Math.PI / 2 - 0.1, f: 1.0, a2: Math.PI / 2 - 0.1, f2: 1.0 + Math.PI / 2 }; // swept across the front
+const UPPER_LOW = { a: 0.15, f: 0.25, a2: 0.6, f2: 1.4 };              // fist dropped to the belly, forearm forward
+const UPPER_HIGH = { a: 0.2, f: 1.0, a2: Math.PI - 0.2, f2: 0.5 };    // driven up to the chin in front
+const DOWN = { a: 0.35, f: 0.75, a2: 0.35, f2: 0.75 };                 // straight arm down and forward
+const ease01 = (u) => (u <= 0 ? 0 : u >= 1 ? 1 : u * u * (3 - 2 * u));
+// piecewise path through arm poses: keys [[t, pose], ...] relative to the start
+function armPath(keys) {
+  return (dt) => {
+    if (dt <= keys[0][0]) return keys[0][1];
+    for (let i = 1; i < keys.length; i++) {
+      if (dt <= keys[i][0]) {
+        const [t0, p0] = keys[i - 1], [t1, p1] = keys[i];
+        return lerpArm(p0, p1, ease01((dt - t0) / (t1 - t0)));
+      }
+    }
+    return keys[keys.length - 1][1];
+  };
+}
+const PUNCH_PATHS = {
+  straight: [[0, GUARD], [0.12, STRAIGHT], [0.18, STRAIGHT], [0.4, GUARD]],
+  hook: [[0, GUARD], [0.1, HOOK_OUT], [0.24, HOOK_IN], [0.5, GUARD]],
+  uppercut: [[0, GUARD], [0.12, UPPER_LOW], [0.26, UPPER_HIGH], [0.5, GUARD]],
+  down: [[0, GUARD], [0.14, DOWN], [0.2, DOWN], [0.45, GUARD]],
+};
 const OVERHEAD = { a: 2.95, f: 0, a2: 3.05, f2: 0 };
 
 export const moves = {
@@ -260,6 +288,48 @@ export const moves = {
     rampS: 0.3,
     expected: { wave: 1 },
   }),
+  // both fists up at the guard
+  guard: (start, end) => armPose(start, end, { left: GUARD, right: GUARD, rampS: 0.2 }),
+  // fighting stance: guard up and the torso bladed deg toward the lead side
+  // (orthodox leads with the left shoulder, so the torso turns to the right)
+  stance: (start, end, kind = 'orthodox', deg = 25) => ({
+    start, end, kind: 'arms', expected: {},
+    apply(t, m) {
+      const k = envelope(t, start, end, 0.3);
+      m.yaw = (m.yaw || 0) + (kind === 'orthodox' ? 1 : -1) * (deg * Math.PI / 180) * k;
+      m.armL = m.armL || lerpArm(ARM_REST, GUARD, k);
+      m.armR = m.armR || lerpArm(ARM_REST, GUARD, k);
+    },
+  }),
+  // one punch thrown from the guard at t: type straight | hook | uppercut | down
+  punch: (t0, hand, type = 'straight') => {
+    const path = armPath(PUNCH_PATHS[type]);
+    const dur = PUNCH_PATHS[type][PUNCH_PATHS[type].length - 1][0];
+    return {
+      start: t0, end: t0 + dur, kind: 'strike', expected: { strike: 1 },
+      apply(t, m) { m[hand === 'left' ? 'armL' : 'armR'] = path(t - t0); },
+    };
+  },
+  // squat: hips drop by depth (m) over downS, hold, back up over upS
+  squat: (start, depth = 0.3, downS = 0.5, holdS = 0.6, upS = 0.6) => ({
+    start, end: start + downS + holdS + upS, kind: 'level', expected: { squat: 1 },
+    apply(t, m) {
+      const u = t - start;
+      const k = u < downS ? ease01(u / downS) : u < downS + holdS ? 1 : 1 - ease01((u - downS - holdS) / upS);
+      m.drop = (m.drop || 0) + depth * k;
+    },
+  }),
+  // hold a crouch of depth (m) between start and end
+  crouch: (start, end, depth = 0.2) => ({
+    start, end, kind: 'level', expected: {},
+    apply(t, m) { m.drop = (m.drop || 0) + depth * envelope(t, start, end, 0.3); },
+  }),
+  // fast fast hip drop and an explosive drive back up (the double leg)
+  shot: (start, depth = 0.3, downS = 0.3, holdS = 0.15, upS = 0.25) => {
+    const seg = moves.squat(start, depth, downS, holdS, upS);
+    seg.expected = { squat: 1, drive_up: 1 };
+    return seg;
+  },
   // fast horizontal arm sweep at shoulder height, out to the side and across
   // the front, wrist peaking near 7 m/s (stands in for a hook or swipe in the
   // steering suppression tests)

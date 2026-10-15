@@ -73,18 +73,19 @@ test('calibration restarts baseline when framing is lost', () => {
 
 test('move test runs the prompts whose detectors exist', () => {
   const cfg = RE.defaultConfig();
-  // locomotion detectors exist; squat and strike arrive with the combat module
+  // every prompt has a detector now that the combat module brings squat and strike
   const c1 = new RE.Calibrator(cfg, 'living_room');
-  assert.deepEqual(c1.tests.map((t) => t.id), ['march', 'high_knees', 'turn_left', 'turn_right', 'point_left', 'point_right']);
-  assert.equal(c1.skippedTests, 2);
+  assert.deepEqual(c1.tests.map((t) => t.id), ['march', 'high_knees', 'turn_left', 'turn_right', 'point_left', 'point_right', 'squat', 'jab_cross']);
+  assert.equal(c1.skippedTests, 0);
   const quick = new RE.Calibrator(cfg, 'living_room', { moveTest: false });
   assert.equal(quick.tests.length, 0);
   assert.equal(quick.skippedTests, 0);
 
-  RE.detectors.add('squat');
+  RE.detectors.delete('strike');
   try {
     const c2 = new RE.Calibrator(cfg, 'living_room');
     assert.equal(c2.tests.length, 7);
+    assert.equal(c2.skippedTests, 1);
     c2.tests = c2.tests.filter((t) => t.id === 'squat');
     c2.state = 'move_test';
     c2.onEvent('step', {});
@@ -92,7 +93,7 @@ test('move test runs the prompts whose detectors exist', () => {
     c2.onEvent('squat', { depth: 1 });
     assert.equal(c2.state, 'done');
   } finally {
-    RE.detectors.delete('squat');
+    RE.detectors.add('strike');
   }
 });
 
@@ -199,7 +200,7 @@ test('demo input emits the spec event shapes', () => {
   assert.deepEqual(events[0][1], { leg: 'left' });
   assert.deepEqual(events[1][1], { leg: 'right' });
   assert.deepEqual(events[2][1], { side: 'left' });
-  assert.deepEqual(events[3][1], { hand: 'left', type: 'jab', power: 1 });
+  assert.deepEqual(events[3][1], { hand: 'left', type: 'jab', power: 1, speed: 5 });
   assert.equal(s.turn, 1);
   assert.equal(s.lean, 0);
   assert.equal(s.squat_depth, 1);
