@@ -29,7 +29,8 @@ Mark's camera body-tracking fitness games for a phone or tablet. All games share
 ## Milestones
 
 1. Foundation: done (calibration, normalization, smoothing, overlay, demo mode, clip recorder).
-2. Locomotion: done (march, high knees, torso turn steering with lean kept as a signal, point turn, turn around, wave, locomotion state machine, smoothing lag about 50 ms, demo button choice). Step lift reads world landmarks; confirm on a real phone clip, and `march.liftSource: 'image'` is the fallback. Both game repos should run their update script to take it.
+2. Locomotion: done (march, high knees, torso turn steering with lean kept as a signal, point turn, turn around, wave, locomotion state machine, smoothing lag about 50 ms, demo button choice). Both game repos should run their update script to take it.
+   Engine 0.3.0: the first real-phone test missed marching, so steps now use a four-cue trigger after Homecoming Hero's (thigh angle and knee height from world landmarks, knee rise and lead from the image, 2 of 4, per-knee visibility) plus warm-up tuning (`capture_start`, `capture_stop`, `apply_capture`; tuned cues live in the profile). Also: `tv` preset (back camera, ultra-wide or widest zoom, front fallback; `engine.camera()`), rails points wait for the next intersection (`locomotion().queued`), `set_facing`, `speech: false`, `DebugOverlay` `{ panel: false }`, and the overlay no longer stalls printing a finished recording. Still to confirm on a real phone clip. manhattan-miles takes it first; stomp-city should update too.
 3. Stomp City needs: strike (jab, cross, hook) and stomp detectors; then update the stomp-city repo's engine.
 4. Combat module.
 5. Manhattan Miles hookup: move its in-game locomotion onto the engine state machine, in the manhattan-miles repo.
