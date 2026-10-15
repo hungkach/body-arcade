@@ -41,6 +41,7 @@
     <button id="camera" class="primary">Start camera</button>
     <button id="demoBtn">Demo mode</button>
     <button id="calibrate" disabled>Calibrate</button>
+    <button id="skipMove" hidden>Skip prompt</button>
     <button id="record" disabled>Record 30 s</button>
     <label class="file">Replay clip<input id="clipFile" type="file" accept=".json,application/json"></label>
     <button id="clearProfile">Clear profile</button>
@@ -79,7 +80,8 @@
   engine.on('status', (e) => say(e.message));
   engine.on('calibrated', (e) => {
     const c = e.cal;
-    const extra = e.skippedTests ? ` Move test skipped (${e.skippedTests} prompts unlock with milestone 2 detectors).` : '';
+    $('skipMove').hidden = true;
+    const extra = e.skippedTests ? ` ${e.skippedTests} move test prompts (squat, jab-cross) arrive with the combat module.` : '';
     say(`${e.fromProfile ? 'Loaded saved' : 'Saved'} ${c.orientation} profile: S ${c.shoulderWidth.toFixed(0)} px, T ${c.torsoLength.toFixed(0)} px.${extra}`);
   });
   engine.on('recalibrate_needed', (e) => say(`No ${e.orientation} profile yet. Tap Calibrate.`));
@@ -107,6 +109,13 @@
     say('Calibrating: step back until shoulders, hips and knees are in frame.');
     engine.calibrate(presetSel.value).catch(() => {});
   });
+  // During the move test, show which prompt is waiting and allow skipping it.
+  engine.on('calibration', (c) => {
+    const testing = c.state === 'move_test';
+    $('skipMove').hidden = !testing;
+    if (testing) say(`Move test: ${c.prompt}. Tap Skip prompt if it never registers.`);
+  });
+  $('skipMove').addEventListener('click', () => engine.skip_move_test());
 
   let recording = false;
   const recBtn = $('record');
@@ -140,8 +149,14 @@
     try { clip = RE.validateClip(JSON.parse(await file.text())); } catch (err) { say('Could not read clip: ' + err.message); return; }
     video.classList.remove('mirror');
     setLive(false);
-    const acc = { name: file.name, orientation: clip.meta.orientation, frames: 0, lean: [Infinity, -Infinity], squat: 0, kneeL: 0, kneeR: 0 };
-    const off = engine.on('frame', () => {
+    const acc = { name: file.name, orientation: clip.meta.orientation, frames: 0, lean: [Infinity, -Infinity], squat: 0, kneeL: 0, kneeR: 0, cadence: 0, events: {} };
+    const offEvents = engine.on('*', (name, payload) => {
+      if (!COUNTED.includes(name)) return;
+      const key = name === 'point' ? `point ${payload.side}` : name;
+      acc.events[key] = (acc.events[key] || 0) + 1;
+    });
+    const off = engine.on('frame', (snap) => {
+      acc.cadence = Math.max(acc.cadence, snap.cadence_spm);
       const s = engine.debug().rawSignals;
       if (!s || s.lean == null) return;
       acc.frames++;
@@ -151,15 +166,19 @@
       acc.kneeR = Math.max(acc.kneeR, s.kneeLiftR);
     });
     say(`Replaying ${file.name}. Stand still for the first 4 s of a clip so it can calibrate.`);
-    engine.calibrate(presetSel.value).catch(() => {});
+    engine.calibrate(presetSel.value, { moveTest: false }).catch(() => {});
     await engine.start_replay(clip, { realtime: true });
     off();
+    offEvents();
     engine.cancel_calibration();
     summaries.unshift(acc);
     summaries.length = Math.min(summaries.length, 2);
     renderStats();
     say(acc.frames ? `Replay done: ${acc.frames} calibrated frames.` : 'Replay done, but the clip never calibrated. Start clips standing still.');
   });
+
+  const COUNTED = ['step', 'run_start', 'run_end', 'lean_left', 'lean_right', 'point', 'turn_around', 'wave'];
+  const EVENT_ROWS = ['step', 'run_start', 'run_end', 'lean_left', 'lean_right', 'point left', 'point right', 'turn_around', 'wave'];
 
   function renderStats() {
     const el = $('stats');
@@ -173,6 +192,8 @@
       ['squat depth max', (s) => f(s.squat)],
       ['knee lift L max', (s) => f(s.kneeL)],
       ['knee lift R max', (s) => f(s.kneeR)],
+      ['cadence max', (s) => s.cadence],
+      ...EVENT_ROWS.map((key) => [key, (s) => s.events[key] || 0]),
     ];
     const head = '<tr><th>Signal</th>' + summaries.map((s) => `<th>${escapeHtml(s.name)}</th>`).join('') + '</tr>';
     const body = rows.map(([label, get]) => `<tr><td>${label}</td>` + summaries.map((s) => `<td>${get(s)}</td>`).join('') + '</tr>').join('');

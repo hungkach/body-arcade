@@ -4,7 +4,9 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { RE, ROOT } from './helpers/engine.mjs';
 import { synthClip } from './helpers/synth.mjs';
-import { build } from '../build/build.mjs';
+import { build, gameFolders } from '../build/build.mjs';
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 
 test('square-pixel conversion keeps distances equal across aspect ratios', () => {
   // the same 100 px diagonal segment in a portrait and a landscape frame
@@ -69,16 +71,21 @@ test('calibration restarts baseline when framing is lost', () => {
   assert.equal(cal.samples.length, 0);
 });
 
-test('move test is skipped until detectors exist, and runs when they do', () => {
+test('move test runs the prompts whose detectors exist', () => {
   const cfg = RE.defaultConfig();
+  // locomotion detectors exist; squat and strike arrive with the combat module
   const c1 = new RE.Calibrator(cfg, 'living_room');
-  assert.equal(c1.tests.length, 0);
-  assert.equal(c1.skippedTests, 8);
+  assert.deepEqual(c1.tests.map((t) => t.id), ['march', 'high_knees', 'lean_left', 'lean_right', 'point_left', 'point_right']);
+  assert.equal(c1.skippedTests, 2);
+  const quick = new RE.Calibrator(cfg, 'living_room', { moveTest: false });
+  assert.equal(quick.tests.length, 0);
+  assert.equal(quick.skippedTests, 0);
 
   RE.detectors.add('squat');
   try {
     const c2 = new RE.Calibrator(cfg, 'living_room');
-    assert.equal(c2.tests.length, 1);
+    assert.equal(c2.tests.length, 7);
+    c2.tests = c2.tests.filter((t) => t.id === 'squat');
     c2.state = 'move_test';
     c2.onEvent('step', {});
     assert.equal(c2.state, 'move_test');
@@ -90,12 +97,16 @@ test('move test is skipped until detectors exist, and runs when they do', () => 
 });
 
 test('profiles save and load per preset and orientation', () => {
-  const cal = { version: 1, preset: 'garage', orientation: 'portrait', shoulderWidth: 120, torsoLength: 200 };
+  const cal = { version: RE.PROFILE_VERSION, preset: 'garage', orientation: 'portrait', shoulderWidth: 120, torsoLength: 200 };
   RE.profiles.save(cal);
   assert.deepEqual(RE.profiles.load('garage', 'portrait'), cal);
   assert.equal(RE.profiles.load('garage', 'landscape'), null);
   RE.profiles.clear('garage', 'portrait');
   assert.equal(RE.profiles.load('garage', 'portrait'), null);
+  // profiles from before world landmark baselines are ignored
+  RE.profiles.save(Object.assign({}, cal, { version: 1 }));
+  assert.equal(RE.profiles.load('garage', 'portrait'), null);
+  RE.profiles.clear('garage', 'portrait');
 });
 
 test('drift monitor fires once after 3 s out of range', () => {
@@ -114,7 +125,7 @@ test('engine loads a saved profile and switches when the device rotates', () => 
   RE.profiles.clear('living_room', 'landscape');
   // calibrate in portrait
   const a = RE.create({ headless: true });
-  a.calibrate();
+  a.calibrate(undefined, { moveTest: false });
   RE.replaySync(synthClip({ w: 720, h: 1280, seconds: 6 }), a._ingest);
   assert.ok(a.is_calibrated());
 
@@ -201,4 +212,24 @@ test('build inlines the engine into a single HTML file', () => {
   assert.ok(!html.includes('<!-- rep-engine:inline -->'));
   assert.ok(html.includes('RE.version = '));
   assert.ok(html.includes('// ---- engine/engine.js ----'));
+});
+
+test('build discovers game folders by their placeholder', () => {
+  const root = mkdtempSync(join(tmpdir(), 'body-arcade-build-'));
+  try {
+    const page = (dir, html) => { mkdirSync(join(root, dir), { recursive: true }); writeFileSync(join(root, dir, 'index.html'), html); };
+    page('new-game', '<!doctype html><title>x</title><!-- rep-engine:inline -->');
+    page('notes', '<!doctype html><title>no engine</title>');
+    page('engine', '<!-- rep-engine:inline -->');
+    mkdirSync(join(root, 'empty'));
+    assert.deepEqual(gameFolders(root), ['new-game']);
+    const out = build({ quiet: true, root });
+    assert.deepEqual(out, [join(root, 'dist', 'new-game.html')]);
+    assert.ok(existsSync(join(root, 'dist', 'new-game.html')));
+    assert.ok(!existsSync(join(root, 'dist', 'notes.html')));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+  // the repo's own games
+  assert.ok(gameFolders().includes('lab'));
 });

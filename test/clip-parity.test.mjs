@@ -113,10 +113,10 @@ test('signals track the scripted movement', () => {
   assert.ok(near(9500).lean < -0.25, `left lean reads ${near(9500).lean}`);
   // squat bottom at 13.25 s: 0.3 m hip drop on a 0.5 m torso is about 0.6 T
   assert.ok(near(13250).squat > 0.9, `squat reads ${near(13250).squat}`);
-  // marching: left knee peaks at 15.28 s, right at 15.83 s. Read 100 ms
-  // later to allow for smoothing lag (about 100 to 120 ms at default settings).
-  assert.ok(near(15380).kneeL > 0.2 && near(15380).kneeR < 0.05, `left knee lift ${near(15380).kneeL}`);
-  assert.ok(near(15930).kneeR > 0.2 && near(15930).kneeL < 0.05, `right knee lift ${near(15930).kneeR}`);
+  // marching: left knee peaks at 15.28 s, right at 15.83 s. Read 50 ms
+  // later to allow for smoothing lag (about 50 ms at default settings).
+  assert.ok(near(15330).kneeL > 0.2 && near(15330).kneeR < 0.05, `left knee lift ${near(15330).kneeL}`);
+  assert.ok(near(15880).kneeR > 0.2 && near(15880).kneeL < 0.05, `right knee lift ${near(15880).kneeR}`);
 });
 
 test('the game-facing snapshot carries lean and confidence', () => {

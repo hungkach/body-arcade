@@ -9,15 +9,6 @@
   'use strict';
   const RE = g.RepEngine;
 
-  // Steps per minute from step timestamps inside the window.
-  RE.cadenceFromSteps = function (times, now, windowMs) {
-    const recent = times.filter((t) => now - t <= windowMs);
-    if (recent.length < 2) return 0;
-    // average interval of recent steps, but decay once steps stop
-    const span = now - recent[0];
-    return Math.round(((recent.length - 1) * 60000) / Math.max(span, recent[recent.length - 1] - recent[0], 1));
-  };
-
   // Pure state for demo input; the DOM layer below only calls these methods.
   class DemoInput {
     constructor(cfg, emit) {
@@ -86,7 +77,7 @@
       return {
         cadence_spm: cadence,
         effort: RE.clamp(cadence / this.cfg.runCadence, 0, 1),
-        speed: 0, // locomotion speed arrives with the state machine (milestone 2)
+        speed: 0, // the engine fills this in from the locomotion state machine
         lean: this.lean,
         squat_depth: now < this.squatUntil ? 1 : 0,
         guard_up: this.guard,

@@ -14,9 +14,9 @@ Mark's camera body-tracking fitness games for a phone or tablet. All games share
 
 - `engine/`: plain scripts, each an IIFE that adds to `globalThis.RepEngine`. Load order is `engine/manifest.json`. No ES module syntax and no `</script` anywhere in engine source (the build inlines it).
 - `lab/`: engine test bench. `stomp-city/`, `manhattan-miles/`: games.
-- `build/build.mjs`: replaces `<!-- rep-engine:inline -->` in each game's `index.html` and writes `dist/<folder>.html`. Commit `dist/`; GitHub Pages serves it at `https://hungkach.github.io/body-arcade/dist/<folder>.html`.
+- `build/build.mjs`: replaces `<!-- rep-engine:inline -->` in the `index.html` of every top-level folder that has one and writes `dist/<folder>.html`. Commit `dist/`; GitHub Pages serves it at `https://hungkach.github.io/body-arcade/dist/<folder>.html`.
 - `npm test` builds, then runs `node --test test/*.test.mjs`. No dependencies. Keep it green before every push.
-- `test/helpers/synth.mjs` generates synthetic clips of a scripted 3D movement in any framing. New detectors get a synthetic-clip test plus portrait vs landscape parity.
+- `test/helpers/synth.mjs` generates synthetic clips of a scripted 3D movement in any framing (`moves` and `scriptMotion` compose them); `test/helpers/run-clip.mjs` runs one through a headless engine across the standard framings. New detectors get a synthetic-clip test plus portrait vs landscape parity.
 
 ## Engine rules
 
@@ -29,7 +29,7 @@ Mark's camera body-tracking fitness games for a phone or tablet. All games share
 ## Milestones
 
 1. Foundation: done (calibration, normalization, smoothing, overlay, demo mode, clip recorder).
-2. Locomotion detectors: march, high knees, lean steer, point turn, turn around, wave, plus the locomotion state machine. Also make the build discover game folders automatically instead of the fixed list, and tune smoothing lag (about 100 to 120 ms at current settings; strikes will need less).
+2. Locomotion: done (march, high knees, lean steer, point turn, turn around, wave, locomotion state machine, build folder discovery, smoothing lag about 50 ms). Step lift reads world landmarks; confirm on a real phone clip, and `march.liftSource: 'image'` is the fallback.
 3. stomp-city on the engine.
 4. Combat module.
 5. manhattan-miles hookup.

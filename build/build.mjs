@@ -1,17 +1,31 @@
 // Build step: inline engine/ into one self-contained HTML file per game.
 //
-// Each game folder (lab/, stomp-city/, manhattan-miles/) that has an
-// index.html containing the placeholder comment below gets a copy in
-// dist/<folder>.html with the whole engine inlined as one <script>.
-// Folders without an index.html are skipped, so games can be added later.
+// Every top-level folder whose index.html contains the placeholder comment
+// below is a game: it gets a copy in dist/<folder>.html with the whole
+// engine inlined as one <script>. Folders are discovered, so a new game only
+// needs a folder with an index.html. Folders without an index.html (or with
+// one that has no placeholder) are skipped.
 
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const PLACEHOLDER = '<!-- rep-engine:inline -->';
-const GAMES = ['lab', 'stomp-city', 'manhattan-miles'];
+const SKIP = new Set(['engine', 'build', 'dist', 'test', 'node_modules']);
+
+// Game folders, sorted: top-level directories with a placeholder index.html.
+// root defaults to the repo; tests pass a scratch folder.
+export function gameFolders(root = ROOT) {
+  return readdirSync(root, { withFileTypes: true })
+    .filter((d) => d.isDirectory() && !d.name.startsWith('.') && !SKIP.has(d.name))
+    .map((d) => d.name)
+    .filter((name) => {
+      const htmlPath = join(root, name, 'index.html');
+      return existsSync(htmlPath) && readFileSync(htmlPath, 'utf8').includes(PLACEHOLDER);
+    })
+    .sort();
+}
 
 export function engineSource() {
   const manifest = JSON.parse(readFileSync(join(ROOT, 'engine', 'manifest.json'), 'utf8'));
@@ -23,23 +37,18 @@ export function engineSource() {
   return banner + parts.join('\n');
 }
 
-export function build({ quiet = false } = {}) {
+export function build({ quiet = false, root = ROOT } = {}) {
   const engine = engineSource();
   // Guard against the inlined script closing its own <script> tag early.
   if (engine.includes('</script')) {
     throw new Error('engine source contains "</script", which would break inlining');
   }
-  mkdirSync(join(ROOT, 'dist'), { recursive: true });
+  mkdirSync(join(root, 'dist'), { recursive: true });
   const built = [];
-  for (const game of GAMES) {
-    const htmlPath = join(ROOT, game, 'index.html');
-    if (!existsSync(htmlPath)) continue;
-    const html = readFileSync(htmlPath, 'utf8');
-    if (!html.includes(PLACEHOLDER)) {
-      throw new Error(`${game}/index.html is missing the ${PLACEHOLDER} placeholder`);
-    }
+  for (const game of gameFolders(root)) {
+    const html = readFileSync(join(root, game, 'index.html'), 'utf8');
     const out = html.replace(PLACEHOLDER, () => `<script>\n${engine}</script>`);
-    const outPath = join(ROOT, 'dist', `${game}.html`);
+    const outPath = join(root, 'dist', `${game}.html`);
     writeFileSync(outPath, out);
     built.push(outPath);
     if (!quiet) console.log(`built dist/${game}.html (${(out.length / 1024).toFixed(1)} KB)`);
