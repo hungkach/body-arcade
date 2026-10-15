@@ -234,3 +234,11 @@ test('build discovers game folders by their placeholder', () => {
   // the repo's own games
   assert.ok(gameFolders().includes('lab'));
 });
+
+test('games choose which demo buttons show', () => {
+  assert.equal(RE.demoButtons().length, RE.DEMO_BUTTONS.length);
+  // standard order whatever order the game lists them in
+  assert.deepEqual(RE.demoButtons({ buttons: ['stomp', 'jab', 'hook'] }).map((b) => b[0]), ['jab', 'hook', 'stomp']);
+  assert.deepEqual(RE.demoButtons({ buttons: [] }), []);
+  assert.throws(() => RE.demoButtons({ buttons: ['jab', 'kick'] }), /unknown demo button kick/);
+});

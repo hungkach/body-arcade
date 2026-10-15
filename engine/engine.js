@@ -235,12 +235,13 @@
       },
       is_calibrated: () => !!st.cal,
 
-      enable_demo(container) {
+      // opts.buttons: which demo buttons to show, e.g. ['jab', 'cross', 'stomp'].
+      enable_demo(container, opts) {
         if (st.demoInput) return;
         stopSource();
         st.source = 'demo';
         st.demoInput = new RE.DemoInput(cfg, (name, payload) => emitter.emit(name, payload));
-        if (container) st.demoUi = new RE.DemoController(container, st.demoInput);
+        if (container) st.demoUi = new RE.DemoController(container, st.demoInput, opts);
         if (st.session.startedAt === null) st.session.startedAt = RE.now();
       },
       disable_demo() {

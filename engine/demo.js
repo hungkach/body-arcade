@@ -94,6 +94,16 @@
     ['jab', 'Jab'], ['cross', 'Cross'], ['hook', 'Hook'],
     ['guard', 'Guard'], ['squat', 'Squat'], ['drive_up', 'Drive up'], ['stomp', 'Stomp'],
   ];
+  RE.DEMO_BUTTONS = Object.freeze(BUTTONS.map(([action]) => action));
+
+  // Which buttons a game shows: opts.buttons lists action ids (see
+  // RE.DEMO_BUTTONS), in the standard order; omitted shows all. Unknown ids throw
+  // so a typo never silently hides a control.
+  RE.demoButtons = function (opts = {}) {
+    if (!opts.buttons) return BUTTONS.slice();
+    for (const id of opts.buttons) if (!RE.DEMO_BUTTONS.includes(id)) throw new Error('unknown demo button ' + id);
+    return BUTTONS.filter(([action]) => opts.buttons.includes(action));
+  };
 
   const CSS = `
 .re-demo{position:absolute;inset:0;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr auto;gap:8px;padding:8px;pointer-events:none;font:600 13px/1.2 system-ui,sans-serif;touch-action:none;user-select:none;-webkit-user-select:none}
@@ -105,8 +115,9 @@
 `;
 
   // DOM layer: builds the touch controls inside `container` (position: relative).
+  // opts.buttons: action ids to show (default all).
   RE.DemoController = class DemoController {
-    constructor(container, input) {
+    constructor(container, input, opts = {}) {
       this.input = input;
       const doc = container.ownerDocument;
       if (!doc.getElementById('re-demo-style')) {
@@ -125,7 +136,10 @@
       right.textContent = 'Drag sideways to turn';
       const bar = doc.createElement('div');
       bar.className = 're-demo-buttons';
-      for (const [action, label] of BUTTONS) {
+      const buttons = RE.demoButtons(opts);
+      bar.style.gridTemplateColumns = `repeat(${Math.max(1, Math.min(5, buttons.length))},1fr)`;
+      if (!buttons.length) bar.hidden = true;
+      for (const [action, label] of buttons) {
         const b = doc.createElement('button');
         b.type = 'button';
         b.textContent = label;

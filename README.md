@@ -8,16 +8,14 @@ Camera body-tracking fitness games for a phone or tablet, built on one shared mo
 | --- | --- |
 | `engine/` | rep-engine: camera, MediaPipe Pose, calibration, body-unit signals, locomotion detectors and state machine, demo mode, recorder, debug overlay |
 | `lab/` | Engine test bench: start the camera, calibrate, watch the signals, record and replay clips |
-| `stomp-city/` | Kaiju game (milestone 3) |
-| `manhattan-miles/` | Open-world city game (milestone 5) |
-| `build/` | Inlines `engine/` into one self-contained HTML file per game (any top-level folder whose `index.html` has the placeholder) |
-| `dist/` | Build output: `dist/<game>.html`, ready to host |
+| `build/` | Inlines `engine/` into the lab page |
+| `dist/` | Build output: `dist/lab.html`, ready to host |
 | `test/` | Node tests: portrait vs landscape clip parity, locomotion acceptance checks on synthetic clips |
 
 ## Commands
 
 ```
-npm run build   # writes dist/<game>.html
+npm run build   # writes dist/lab.html
 npm test        # builds, then runs every test in test/
 ```
 
@@ -37,15 +35,24 @@ const m = engine.locomotion();           // state (idle, walk, run), speed, faci
 
 Steering is a torso turn while still facing the screen: `turn` is -1 to 1, 0 inside 15 degrees, full at 45. Yaw comes from shoulder width over torso length against calibration (distance independent), direction from shoulder depth cross-checked with the nose. Lean is still measured but does not steer. On rails (`set_movement({ rails: true, at_intersection, branch_bearing })`) turn slides the player across the path and a point at an intersection takes that street. Speeds are in world units per second (walk 1.4, run 3.5 by default); games scale them.
 
-Games include the engine with a `<!-- rep-engine:inline -->` placeholder in their `index.html`; the build step replaces it. Edit `engine/`, never the inlined copy in `dist/`.
+## Games
+
+Each game lives in its own repo with a locked copy of this engine, and takes engine updates only when you run its update script:
+
+| Game | Repo | Play |
+| --- | --- | --- |
+| Stomp City | [hungkach/stomp-city](https://github.com/hungkach/stomp-city) | https://hungkach.github.io/stomp-city/ |
+| Manhattan Miles | [hungkach/manhattan-miles](https://github.com/hungkach/manhattan-miles) | https://hungkach.github.io/manhattan-miles/ |
+
+In a game repo: `npm run update-engine ../body-arcade`, then `npm test` and a play-through before pushing. Edit the engine here, never the copies in game repos.
 
 ## Milestone status
 
 1. Foundation: done. Calibration, normalization, smoothing, overlay, demo mode and clip recording.
-2. Locomotion: done. March, high knees, torso turn steering, lean, point turn, turn around, wave, the locomotion state machine, build folder discovery, smoothing lag cut to about 50 ms.
-3. stomp-city on the engine: next.
+2. Locomotion: done. March, high knees, torso turn steering, point, turn around, wave, the locomotion state machine, smoothing lag cut to about 50 ms, demo button choice.
+3. Stomp City detectors (strikes, stomp) and wiring in the stomp-city repo.
 4. Combat module.
-5. manhattan-miles hookup.
+5. Manhattan Miles hookup in the manhattan-miles repo.
 
 ## Testing on a phone
 

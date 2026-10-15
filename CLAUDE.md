@@ -13,8 +13,8 @@ Mark's camera body-tracking fitness games for a phone or tablet. All games share
 ## Layout and build
 
 - `engine/`: plain scripts, each an IIFE that adds to `globalThis.RepEngine`. Load order is `engine/manifest.json`. No ES module syntax and no `</script` anywhere in engine source (the build inlines it).
-- `lab/`: engine test bench. `stomp-city/`, `manhattan-miles/`: games.
-- `build/build.mjs`: replaces `<!-- rep-engine:inline -->` in the `index.html` of every top-level folder that has one and writes `dist/<folder>.html`. Commit `dist/`; GitHub Pages serves it at `https://hungkach.github.io/body-arcade/dist/<folder>.html`.
+- `lab/`: engine test bench. `build/build.mjs` inlines the engine into `lab/index.html` and writes `dist/lab.html`. Commit `dist/`; GitHub Pages serves it at `https://hungkach.github.io/body-arcade/dist/lab.html`.
+- Games live in their own repos (`hungkach/stomp-city`, `hungkach/manhattan-miles`), each with a locked copy of `engine/` and `scripts/update-engine.mjs` to take a newer one. Do not add game folders here. Engine changes never reach a game until that game's repo runs its update script, so note in your report which game repos should update and why.
 - `npm test` builds, then runs `node --test test/*.test.mjs`. No dependencies. Keep it green before every push.
 - `test/helpers/synth.mjs` generates synthetic clips of a scripted 3D movement in any framing (`moves` and `scriptMotion` compose them); `test/helpers/run-clip.mjs` runs one through a headless engine across the standard framings. New detectors get a synthetic-clip test plus portrait vs landscape parity.
 
@@ -29,10 +29,10 @@ Mark's camera body-tracking fitness games for a phone or tablet. All games share
 ## Milestones
 
 1. Foundation: done (calibration, normalization, smoothing, overlay, demo mode, clip recorder).
-2. Locomotion: done (march, high knees, torso turn steering replacing lean steer, point turn, turn around, wave, locomotion state machine, build folder discovery, smoothing lag about 50 ms). Step lift reads world landmarks; confirm on a real phone clip, and `march.liftSource: 'image'` is the fallback.
-3. stomp-city on the engine.
+2. Locomotion: done (march, high knees, torso turn steering with lean kept as a signal, point turn, turn around, wave, locomotion state machine, smoothing lag about 50 ms, demo button choice). Step lift reads world landmarks; confirm on a real phone clip, and `march.liftSource: 'image'` is the fallback. Both game repos should run their update script to take it.
+3. Stomp City needs: strike (jab, cross, hook) and stomp detectors; then update the stomp-city repo's engine.
 4. Combat module.
-5. manhattan-miles hookup.
+5. Manhattan Miles hookup: move its in-game locomotion onto the engine state machine, in the manhattan-miles repo.
 
 ## Working with Mark
 
