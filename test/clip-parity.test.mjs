@@ -123,7 +123,7 @@ test('the game-facing snapshot carries lean and confidence', () => {
   const s = runs.landscape.engine.signals();
   assert.equal(typeof s.lean, 'number');
   assert.ok(s.confidence > 0.9);
-  for (const key of ['cadence_spm', 'effort', 'speed', 'lean', 'squat_depth', 'guard_up', 'confidence']) {
+  for (const key of ['cadence_spm', 'effort', 'speed', 'turn', 'lean', 'squat_depth', 'guard_up', 'confidence']) {
     assert.ok(key in s, `snapshot missing ${key}`);
   }
 });

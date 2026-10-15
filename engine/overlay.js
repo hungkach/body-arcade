@@ -6,6 +6,7 @@
 
   const BARS = [
     // [label, getter, min, max]
+    ['turn', (s) => s.turn, -1, 1],
     ['lean', (s) => s.lean, -1, 1],
     ['squat', (s) => s.squat_depth, 0, 1],
     ['cadence', (s) => s.cadence_spm, 0, 220],

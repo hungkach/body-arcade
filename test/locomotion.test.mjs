@@ -11,7 +11,7 @@ import { runScript, VARIANTS } from './helpers/run-clip.mjs';
 
 const cfg = RE.defaultConfig();
 const runAll = (script, opts) => Object.fromEntries(Object.entries(VARIANTS).map(([name, v]) => [name, runScript(script, v, opts)]));
-const EVENTS = ['step', 'run_start', 'run_end', 'lean_left', 'lean_right', 'point', 'turn_around', 'wave'];
+const EVENTS = ['step', 'run_start', 'run_end', 'turn_left', 'turn_right', 'lean_left', 'lean_right', 'point', 'turn_around', 'wave'];
 
 const MARCH = scriptMotion([moves.march(5, 35)]);
 const WALK = scriptMotion([moves.walk(5, 35)]);
@@ -106,7 +106,7 @@ test('lean, point, turn around and wave each fire once, and a swipe is not a poi
   }
 });
 
-test('lean steering: deadzone, full scale, and fast wrists suppress it', () => {
+test('lean signal: deadzone, full scale, and fast wrists suppress it', () => {
   const r = gestures.portrait;
   const at = (ms) => r.frames.find((f) => f.t >= ms);
   assert.equal(at(4800).snap.lean, 0, 'standing still steers');
@@ -138,14 +138,96 @@ test('portrait and landscape give the same event counts', () => {
     moves.point(8, 9.2, 'left'), moves.point(11, 12.2, 'right'),
     moves.turnAround(23, 24.6), moves.wave(26.5, 28.5, 'right'),
     moves.lean(31, 33.5, 'left'), moves.lean(34, 36.5, 'right'),
+    moves.turn(37, 39.5, 'left'), moves.turn(40, 42.5, 'right'),
   ]);
   const runs = runAll(script);
   const counts = (r) => Object.fromEntries(EVENTS.map((n) => [n, r.count(n)]));
   const base = counts(runs.portrait);
   assert.ok(base.step >= Math.ceil(0.95 * script.expected.step), `portrait ${base.step} of ${script.expected.step} steps`);
-  for (const n of ['run_start', 'turn_around', 'wave', 'lean_left', 'lean_right']) assert.equal(base[n], 1, `portrait ${n}`);
+  for (const n of ['run_start', 'turn_around', 'wave', 'lean_left', 'lean_right', 'turn_left', 'turn_right']) assert.equal(base[n], 1, `portrait ${n}`);
   assert.equal(base.point, 2);
   for (const [name, r] of Object.entries(runs)) assert.deepEqual(counts(r), base, `${name} differs from portrait`);
+});
+
+// ---- torso turn steering ----
+
+// Held torso turns, 4 s apart: [degrees, + = right]
+const HOLDS = [10, -10, 30, -30, 45, -45, 60, -60];
+const TURNS = scriptMotion(HOLDS.map((deg, i) => moves.holdTurn(5 + i * 4, 9 + i * 4, deg)));
+const turns = runAll(TURNS);
+// mean turn and yaw while each hold is steady
+function holdReadings(r) {
+  return HOLDS.map((deg, i) => {
+    const fs = r.frames.filter((f) => f.det && f.t > (5.8 + i * 4) * 1000 && f.t < (8.2 + i * 4) * 1000);
+    const mean = (k) => fs.reduce((a, f) => a + f.det[k], 0) / fs.length;
+    return { deg, turn: mean('turn'), yaw: mean('yaw'), snap: fs.reduce((a, f) => a + f.snap.turn, 0) / fs.length };
+  });
+}
+
+test('torso turn: deadzone 15, full at 45, signed, in every framing', () => {
+  for (const [name, r] of Object.entries(turns)) {
+    // the close 4 ft camera reads yaw about 10% low from perspective
+    const close = name === 'livingRoom';
+    for (const h of holdReadings(r)) {
+      const sign = Math.sign(h.deg);
+      const label = `${name} ${h.deg} deg: turn ${h.turn.toFixed(2)}, yaw ${h.yaw.toFixed(1)}`;
+      assert.ok(Math.abs(h.yaw - h.deg) < (close ? 0.15 * Math.abs(h.deg) + 2 : 3), label);
+      assert.equal(h.snap, h.turn, 'snapshot carries the turn signal');
+      if (Math.abs(h.deg) <= 10) assert.equal(h.turn, 0, label);
+      else if (Math.abs(h.deg) === 30) assert.ok(sign * h.turn > (close ? 0.3 : 0.4) && sign * h.turn < 0.6, label);
+      else if (Math.abs(h.deg) === 45) assert.ok(sign * h.turn > (close ? 0.75 : 0.9), label);
+      else assert.ok(sign * h.turn > 0.99, label);
+    }
+  }
+});
+
+test('torso turn: portrait and landscape agree, and distance does not matter', () => {
+  const p = holdReadings(turns.portrait);
+  for (const other of ['landscape', 'portraitMirrored', 'landscapeFar', 'tablet']) {
+    holdReadings(turns[other]).forEach((h, i) => {
+      assert.ok(Math.abs(h.turn - p[i].turn) < 0.05, `${other} ${h.deg} deg: ${h.turn.toFixed(3)} vs portrait ${p[i].turn.toFixed(3)}`);
+    });
+  }
+});
+
+test('torso turn is not distance drift, and lean does not read as turn', () => {
+  for (const [name, r] of Object.entries(turns)) {
+    assert.equal(r.count('recalibrate_suggested'), 0, `${name}: a held turn asked to recalibrate`);
+    // the old shoulder-width check would have fired on the 45 and 60 degree holds
+    const narrow = r.frames.filter((f) => f.raw && f.raw.shoulderRatio < 0.8).length;
+    assert.ok(narrow > 90, `${name}: holds too short to test drift`);
+  }
+  for (const [name, r] of Object.entries(gestures)) {
+    const leaning = r.frames.filter((f) => f.t > 5500 && f.t < 10000);
+    assert.ok(leaning.every((f) => f.snap.turn === 0), `${name}: lean read as turn`);
+  }
+});
+
+test('torso turn: a head turn alone, or cues that disagree, do not steer', () => {
+  // head turned 50 degrees with the torso square; then torso right, head far left
+  const script = scriptMotion([moves.holdTurn(5, 9, 0, 0.4, 50), moves.holdTurn(10, 14, 35, 0.4, -90)]);
+  for (const [name, r] of Object.entries(runAll(script))) {
+    const head = r.frames.filter((f) => f.t > 5800 && f.t < 8200);
+    assert.ok(head.every((f) => f.snap.turn === 0), `${name}: head turn steered`);
+    const conflict = r.frames.filter((f) => f.t > 10800 && f.t < 13200);
+    assert.ok(conflict.every((f) => f.snap.turn === 0), `${name}: conflicting cues steered`);
+  }
+});
+
+test('torso turn steers while marching, and a fast arm switches it off', () => {
+  const script = scriptMotion([moves.march(5, 20), moves.holdTurn(8, 13, 45), moves.swipe(10.2, 11, 'left')]);
+  for (const [name, r] of Object.entries(runAll(script))) {
+    const at = (ms) => r.frames.find((f) => f.t >= ms);
+    assert.ok(at(9500).snap.turn > 0.75, `${name}: turn while marching ${at(9500).snap.turn}`);
+    const swipe = r.frames.filter((f) => f.t > 10400 && f.t < 10900);
+    assert.ok(swipe.every((f) => f.snap.turn === 0), `${name}: a fast arm steered`);
+    assert.ok(at(12000).snap.turn > 0.75, `${name}: turn after the swipe ${at(12000).snap.turn}`);
+    // free movement: facing swings right while turned, straight otherwise
+    assert.ok(at(7900).loco.facing === 0, `${name}: turned before the torso did`);
+    const f = at(13500).loco.facing;
+    assert.ok(f > 150 && f < 330, `${name}: facing ${f.toFixed(0)} after about 4 s at 45 degrees`);
+    assert.ok(r.count('step') >= Math.ceil(0.95 * script.expected.step), `${name}: turning cost steps`);
+  }
 });
 
 test('hidden knees pause step detection', () => {
@@ -164,7 +246,7 @@ test('hidden knees pause step detection', () => {
 test('calibration move test runs on the locomotion detectors', () => {
   const script = scriptMotion([
     moves.march(5, 8), moves.highKnees(8.5, 10.5),
-    moves.lean(11, 13.5, 'left'), moves.lean(14, 16.5, 'right'),
+    moves.turn(11, 13.5, 'left'), moves.turn(14, 16.5, 'right'),
     moves.point(17, 18.2, 'left'), moves.point(19, 20.2, 'right'),
   ]);
   for (const [name, r] of Object.entries(runAll(script, { moveTest: true }))) {
@@ -189,7 +271,7 @@ function stepAt(l, t0, durMs, spm, extra = {}) {
   let t = t0;
   for (; t <= t0 + durMs; t += 33) {
     while (next <= t) { l.onEvent('step', { leg: 'left' }, next); next += period; }
-    l.update(t, Object.assign({ cadence_spm: spm, lean: 0 }, extra), extra.mode || 'explore');
+    l.update(t, Object.assign({ cadence_spm: spm, turn: 0 }, extra), extra.mode || 'explore');
   }
   return t;
 }
@@ -209,18 +291,18 @@ test('state machine: walk speed follows cadence, clamped', () => {
 
 test('state machine: ramps up over about 300 ms and coasts down over about 400 ms', () => {
   const l = loco();
-  l.update(0, { cadence_spm: 0, lean: 0 }, 'explore');
+  l.update(0, { cadence_spm: 0, turn: 0 }, 'explore');
   l.onEvent('step', {}, 0);
-  l.update(33, { cadence_spm: 110, lean: 0 }, 'explore');
+  l.update(33, { cadence_spm: 110, turn: 0 }, 'explore');
   let t = 33;
-  for (; t <= 300; t += 33) l.update(t, { cadence_spm: 110, lean: 0 }, 'explore');
+  for (; t <= 300; t += 33) l.update(t, { cadence_spm: 110, turn: 0 }, 'explore');
   assert.ok(l.speed > 0.9 * cfg.locomotion.walkSpeed, `speed after 300 ms ${l.speed}`);
   assert.ok(l.speed < cfg.locomotion.walkSpeed);
   // steps stop: target drops once the gap passes 600 ms, then coasts
-  for (; t <= 650; t += 33) l.update(t, { cadence_spm: 110, lean: 0 }, 'explore');
+  for (; t <= 650; t += 33) l.update(t, { cadence_spm: 110, turn: 0 }, 'explore');
   assert.equal(l.targetSpeed, 0);
   const tStop = t;
-  for (; t <= tStop + 450; t += 33) l.update(t, { cadence_spm: 110, lean: 0 }, 'explore');
+  for (; t <= tStop + 450; t += 33) l.update(t, { cadence_spm: 110, turn: 0 }, 'explore');
   assert.equal(l.speed, 0);
   assert.equal(l.state, 'idle');
 });
@@ -240,40 +322,40 @@ test('state machine: transit and combat stop the player, combat faces the target
   const l = loco({ rails: false, target_bearing: () => 270 });
   stepAt(l, 0, 2000, 110);
   assert.ok(l.speed > 1);
-  l.update(2100, { cadence_spm: 110, lean: 0 }, 'transit');
+  l.update(2100, { cadence_spm: 110, turn: 0 }, 'transit');
   assert.equal(l.speed, 0);
-  l.update(2200, { cadence_spm: 110, lean: 0 }, 'combat');
+  l.update(2200, { cadence_spm: 110, turn: 0 }, 'combat');
   assert.equal(l.speed, 0);
   assert.equal(l.facing, 270);
 });
 
-test('state machine: turn around, rails turns at intersections, free yaw from lean', () => {
+test('state machine: turn around, rails turns at intersections, free yaw from turn', () => {
   // turn around adds 180 in either model
   const free = loco();
-  free.update(0, { cadence_spm: 0, lean: 0 }, 'explore');
+  free.update(0, { cadence_spm: 0, turn: 0 }, 'explore');
   free.onEvent('turn_around', {}, 10);
-  free.update(33, { cadence_spm: 0, lean: 0 }, 'explore');
+  free.update(33, { cadence_spm: 0, turn: 0 }, 'explore');
   assert.equal(free.facing, 180);
-  // free movement: full lean turns 90 degrees per second
-  for (let t = 66; t < 1056; t += 33) free.update(t, { cadence_spm: 0, lean: 1 }, 'explore');
+  // free movement: full turn steers 90 degrees per second, lean does not
+  for (let t = 66; t < 1056; t += 33) free.update(t, { cadence_spm: 0, turn: 1, lean: -1 }, 'explore');
   assert.ok(Math.abs(free.facing - 270) < 2, `facing ${free.facing}`);
   assert.equal(free.lateral, 0);
 
-  // rails: lean slides sideways, a point only turns at an intersection
+  // rails: turn slides sideways, a point only turns at an intersection
   let atCorner = false;
   const rails = loco({ rails: true, at_intersection: () => atCorner, branch_bearing: (side) => (side === 'left' ? 270 : 90) });
-  rails.update(0, { cadence_spm: 0, lean: 0.5 }, 'explore');
+  rails.update(0, { cadence_spm: 0, turn: 0.5 }, 'explore');
   assert.equal(rails.lateral, 0.5);
   assert.equal(rails.facing, 0);
   rails.onEvent('point', { side: 'left' }, 10);
-  rails.update(33, { cadence_spm: 0, lean: 0 }, 'explore');
+  rails.update(33, { cadence_spm: 0, turn: 0 }, 'explore');
   assert.equal(rails.facing, 0, 'turned away from an intersection');
   atCorner = true;
   rails.onEvent('point', { side: 'right' }, 40);
-  rails.update(66, { cadence_spm: 0, lean: 0 }, 'explore');
+  rails.update(66, { cadence_spm: 0, turn: 0 }, 'explore');
   assert.equal(rails.facing, 90);
   // at an intersection with no point, the player goes straight
-  rails.update(99, { cadence_spm: 0, lean: 0 }, 'explore');
+  rails.update(99, { cadence_spm: 0, turn: 0 }, 'explore');
   assert.equal(rails.facing, 90);
 });
 

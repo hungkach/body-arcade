@@ -2,7 +2,7 @@
 // games are playable and testable from a phone with no tracking running.
 //   Left thumb zone: tap in rhythm = march (tap speed sets cadence).
 //                    Double-tap and hold = run.
-//   Right thumb zone: drag sideways = lean.
+//   Right thumb zone: drag sideways = turn.
 //   Buttons: point L/R, turn around, jab, cross, hook, guard (hold),
 //            squat, drive up, stomp.
 (function (g) {
@@ -16,7 +16,7 @@
       this.emit = emit;
       this.steps = [];
       this.leg = 'left';
-      this.lean = 0;
+      this.turn = 0;
       this.guard = false;
       this.squatUntil = 0;
       this.running = false;
@@ -56,7 +56,7 @@
       g.clearTimeout(this.runTimer);
       this.emit('run_end', {});
     }
-    setLean(v) { this.lean = RE.clamp(v, -1, 1); }
+    setTurn(v) { this.turn = RE.clamp(v, -1, 1); }
     press(action, now) {
       const strike = (hand, type) => this.emit('strike', { hand, type, power: 1 });
       switch (action) {
@@ -78,7 +78,8 @@
         cadence_spm: cadence,
         effort: RE.clamp(cadence / this.cfg.runCadence, 0, 1),
         speed: 0, // the engine fills this in from the locomotion state machine
-        lean: this.lean,
+        turn: this.turn,
+        lean: 0,
         squat_depth: now < this.squatUntil ? 1 : 0,
         guard_up: this.guard,
         confidence: 1,
@@ -121,7 +122,7 @@
       left.textContent = 'Tap to march · double-tap and hold to run';
       const right = doc.createElement('div');
       right.className = 're-demo-zone';
-      right.textContent = 'Drag sideways to lean';
+      right.textContent = 'Drag sideways to turn';
       const bar = doc.createElement('div');
       bar.className = 're-demo-buttons';
       for (const [action, label] of BUTTONS) {
@@ -155,9 +156,9 @@
       right.addEventListener('pointermove', (e) => {
         if (startX === null) return;
         const width = right.getBoundingClientRect().width || 1;
-        input.setLean((e.clientX - startX) / (width * 0.4));
+        input.setTurn((e.clientX - startX) / (width * 0.4));
       });
-      const rightUp = () => { startX = null; right.classList.remove('is-active'); input.setLean(0); };
+      const rightUp = () => { startX = null; right.classList.remove('is-active'); input.setTurn(0); };
       right.addEventListener('pointerup', rightUp);
       right.addEventListener('pointercancel', rightUp);
 

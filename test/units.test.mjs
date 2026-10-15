@@ -75,7 +75,7 @@ test('move test runs the prompts whose detectors exist', () => {
   const cfg = RE.defaultConfig();
   // locomotion detectors exist; squat and strike arrive with the combat module
   const c1 = new RE.Calibrator(cfg, 'living_room');
-  assert.deepEqual(c1.tests.map((t) => t.id), ['march', 'high_knees', 'lean_left', 'lean_right', 'point_left', 'point_right']);
+  assert.deepEqual(c1.tests.map((t) => t.id), ['march', 'high_knees', 'turn_left', 'turn_right', 'point_left', 'point_right']);
   assert.equal(c1.skippedTests, 2);
   const quick = new RE.Calibrator(cfg, 'living_room', { moveTest: false });
   assert.equal(quick.tests.length, 0);
@@ -193,14 +193,15 @@ test('demo input emits the spec event shapes', () => {
   d.press('point_left', 700);
   d.press('jab', 710);
   d.press('squat', 720);
-  d.setLean(3);
+  d.setTurn(3);
   const s = d.signals(800);
   assert.deepEqual(events.map((e) => e[0]), ['step', 'step', 'point', 'strike', 'squat']);
   assert.deepEqual(events[0][1], { leg: 'left' });
   assert.deepEqual(events[1][1], { leg: 'right' });
   assert.deepEqual(events[2][1], { side: 'left' });
   assert.deepEqual(events[3][1], { hand: 'left', type: 'jab', power: 1 });
-  assert.equal(s.lean, 1);
+  assert.equal(s.turn, 1);
+  assert.equal(s.lean, 0);
   assert.equal(s.squat_depth, 1);
   d.destroy();
 });

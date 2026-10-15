@@ -195,11 +195,26 @@
         startSteps: 2,  // consecutive high-knee steps that start a run
         exitMs: 600,    // run ends after this long with no high-knee step
       },
+      // Torso turn steering: yaw from (shoulder width / torso length) against
+      // the calibrated ratio, direction from shoulder depth and the nose.
+      turn: {
+        deadzone: 15,     // degrees of torso yaw that still mean straight ahead
+        full: 45,         // degrees that give full turn rate
+        depthMin: 0.1,    // shoulder depth difference / shoulder width that gives a direction (about 6 degrees)
+        noseMin: 0.04,    // S, nose offset from the shoulder midpoint that gives a direction
+        eventLevel: 0.5,  // turn level that fires turn_left / turn_right
+        eventReset: 0.2,
+      },
+      // Lean is still measured (the lean signal), but turn steers.
       lean: {
         deadzone: 0.06,      // S
         full: 0.25,          // S, lean that reads as 1
-        wristSpeedMax: 2.0,  // S per second; faster wrists suppress steering (punches never steer)
-        suppressHoldMs: 150, // steering stays off this long after the wrists slow down
+        // S per second; faster wrists suppress turn and lean (punches never
+        // steer). The spec's 2 S/s cut steering on every arm swing once the
+        // torso is turned (swing then moves sideways in the image: up to 4 S/s
+        // marching, 11 S/s high knees); swipes peak at 35 S/s and up.
+        wristSpeedMax: 12,
+        suppressHoldMs: 250, // steering stays off this long after the wrists slow down
         eventLevel: 0.5,     // steering level that fires lean_left / lean_right
         eventReset: 0.2,     // steering must return below this to fire again
       },
@@ -218,6 +233,7 @@
       },
       wave: {
         minSwing: 0.15,  // S, sideways wrist travel that counts as one direction change
+        minAbove: 0.25,  // T, wrist this far above its shoulder (a swipe at shoulder height is not a wave)
         reversals: 2,
         windowMs: 1000,
         cooldownMs: 2000,
@@ -237,7 +253,7 @@
         stopMs: 400,           // coast to a stop over this long
         stopAfterMs: 600,      // no step for this long (or 1.5 step intervals, if longer) stops you
         stopIntervals: 1.5,
-        maxTurnRate: 90,       // degrees per second at full lean (free movement)
+        maxTurnRate: 90,       // degrees per second at full turn (free movement)
       },
       demo: {
         doubleTapMs: 350,
@@ -500,16 +516,19 @@
     const useWorld = cfg.march.liftSource !== 'image' && out.kneeLiftWL != null;
     out.stepLiftL = useWorld ? out.kneeLiftWL : out.kneeLiftL;
     out.stepLiftR = useWorld ? out.kneeLiftWR : out.kneeLiftR;
-    // shoulder width now vs calibration: drifts when the player moves closer/farther
+    // shoulder width and torso length now vs calibration. Both scale with
+    // distance; only shoulder width shrinks when the torso turns, so torso
+    // length tracks distance and their quotient tracks the turn.
     out.shoulderRatio = RE.dist(points[L.L_SHOULDER], points[L.R_SHOULDER]) / cal.shoulderWidth;
+    out.torsoRatio = RE.dist(RE.mid(points[L.L_SHOULDER], points[L.R_SHOULDER]), RE.mid(points[L.L_HIP], points[L.R_HIP])) / cal.torsoLength;
     out.body = { ls, rs, lh, rh, lk, rk, sMid, hMid, nose, le, re, lw, rw };
     return out;
   };
 })(globalThis);
 
 // ---- engine/detectors.js ----
-// Locomotion gesture detectors: march steps, high knees (run), lean steer,
-// point turn, turn around and wave. Each reads the per-frame signals in body
+// Locomotion gesture detectors: march steps, high knees (run), torso turn
+// steering, lean, point turn, turn around and wave. Each reads the per-frame signals in body
 // units (S = shoulder width, T = torso length, +x = player's right, +y = up)
 // and pushes events; games only ever see the events and the snapshot.
 (function (g) {
@@ -518,7 +537,7 @@
   const L = RE.LM;
 
   RE.detectors = RE.detectors || new Set();
-  for (const name of ['step', 'run_start', 'run_end', 'lean_left', 'lean_right', 'point', 'turn_around', 'wave']) {
+  for (const name of ['step', 'run_start', 'run_end', 'turn_left', 'turn_right', 'lean_left', 'lean_right', 'point', 'turn_around', 'wave']) {
     RE.detectors.add(name);
   }
 
@@ -653,8 +672,9 @@
     }
   }
 
-  // Lean steer: shoulder midpoint x minus hip midpoint x, through a deadzone,
-  // scaled to -1..1. Fast wrists (punches, swipes) switch steering off.
+  // Lean: shoulder midpoint x minus hip midpoint x, through a deadzone,
+  // scaled to -1..1. Fast wrists (punches, swipes) switch it off, and the
+  // same suppression gates turn steering below.
   class LeanDetector {
     constructor(cfg) {
       this.c = cfg.lean;
@@ -667,10 +687,10 @@
       const s = ctx.sig;
       const speed = Math.max(out.wristSpeedL, out.wristSpeedR);
       if (speed > this.c.wristSpeedMax) this.suppressUntil = t + this.c.suppressHoldMs;
-      out.leanSuppressed = t < this.suppressUntil;
+      out.steerSuppressed = t < this.suppressUntil;
 
       let steer = 0;
-      if (!ctx.low && !out.leanSuppressed) {
+      if (!ctx.low && !out.steerSuppressed) {
         const mag = (Math.abs(s.lean) - this.c.deadzone) / (this.c.full - this.c.deadzone);
         if (mag > 0) steer = Math.sign(s.lean) * Math.min(mag, 1);
       }
@@ -682,6 +702,65 @@
           this.armed[side] = false;
           out.events.push(['lean_' + side, { lean: steer }]);
         } else if (!this.armed[side] && level < this.c.eventReset) {
+          this.armed[side] = true;
+        }
+      }
+    }
+  }
+
+  // Torso turn steering. Shoulder width shrinks with the cosine of torso yaw
+  // while torso length does not, and both scale with distance, so
+  //   cos(yaw) = (shoulder width / torso length) / calibrated ratio
+  // reads the same whether the player stands closer or farther. That gives
+  // the size of the turn; the direction comes from which shoulder is nearer
+  // the camera in world landmarks, cross-checked against the nose offset
+  // from the shoulder midpoint (the nose sits in front of the shoulders).
+  class TurnDetector {
+    constructor(cfg) {
+      this.c = cfg.turn;
+      this.armed = { left: true, right: true };
+    }
+
+    direction(ctx) {
+      const c = this.c;
+      let depth = 0;
+      const w = ctx.world;
+      if (w && seen(ctx, L.L_SHOULDER) && seen(ctx, L.R_SHOULDER)) {
+        const ls = w[L.L_SHOULDER], rs = w[L.R_SHOULDER];
+        const width = Math.hypot(ls.x - rs.x, ls.y - rs.y, ls.z - rs.z);
+        // world z grows away from the camera: right shoulder farther = turned right
+        const dz = width > 0 ? (rs.z - ls.z) / width : 0;
+        if (Math.abs(dz) >= c.depthMin) depth = Math.sign(dz);
+      }
+      let nose = 0;
+      if (seen(ctx, L.NOSE)) {
+        const off = ctx.sig.body.nose.x - ctx.sig.body.sMid.x;
+        if (Math.abs(off) >= c.noseMin) nose = Math.sign(off);
+      }
+      // both cues present but disagreeing: do not steer
+      if (depth && nose && depth !== nose) return 0;
+      return depth || nose;
+    }
+
+    update(ctx, out) {
+      const c = this.c;
+      const s = ctx.sig;
+      out.turn = 0;
+      out.yaw = 0;
+      if (ctx.low || !(s.torsoRatio > 0)) return;
+      const cosYaw = RE.clamp(s.shoulderRatio / s.torsoRatio, 0, 1);
+      const mag = (Math.acos(cosYaw) * 180) / Math.PI;
+      const dir = this.direction(ctx);
+      out.yaw = dir * mag;
+      const k = (mag - c.deadzone) / (c.full - c.deadzone);
+      if (dir && k > 0 && !out.steerSuppressed) out.turn = dir * Math.min(k, 1);
+
+      for (const side of ['left', 'right']) {
+        const level = side === 'left' ? -out.turn : out.turn;
+        if (this.armed[side] && level >= c.eventLevel) {
+          this.armed[side] = false;
+          out.events.push(['turn_' + side, { turn: out.turn }]);
+        } else if (!this.armed[side] && level < c.eventReset) {
           this.armed[side] = true;
         }
       }
@@ -770,7 +849,7 @@
     }
   }
 
-  // Wave: wrist above its shoulder, swinging side to side. Counts direction
+  // Wave: wrist well above its shoulder, swinging side to side. Counts direction
   // changes of at least minSwing S; enough of them inside the window fire.
   class WaveDetector {
     constructor(cfg) {
@@ -788,7 +867,7 @@
         const s = hand === 'left' ? b.ls : b.rs;
         const w = hand === 'left' ? b.lw : b.rw;
         // both hands overhead is the turn-around gesture, not a wave
-        if (ctx.low || out.handsOverhead || !seen(ctx, wi) || w.y <= s.y) { this.hands[hand] = fresh(); continue; }
+        if (ctx.low || out.handsOverhead || !seen(ctx, wi) || w.y - s.y < this.c.minAbove) { this.hands[hand] = fresh(); continue; }
         const x = w.x - s.x;
         let reversed = false;
         if (h.dir === 0) {
@@ -821,13 +900,13 @@
 
   // All locomotion detectors, run in order once per frame.
   // ctx: {t (ms), w, h, points (smoothed px), raw (unsmoothed px), world, cal, sig, low, holdVis}
-  // Returns {events: [[name, payload]], lean, cadence, running, effort, ...}
+  // Returns {events: [[name, payload]], turn, yaw, lean, cadence, running, effort, ...}
   RE.LocomotionDetectors = class LocomotionDetectors {
     constructor(cfg) {
-      this.list = [new WristSpeed(), new StepDetector(cfg), new LeanDetector(cfg), new TurnAroundDetector(cfg), new PointDetector(cfg), new WaveDetector(cfg)];
+      this.list = [new WristSpeed(), new StepDetector(cfg), new LeanDetector(cfg), new TurnDetector(cfg), new TurnAroundDetector(cfg), new PointDetector(cfg), new WaveDetector(cfg)];
     }
     update(ctx) {
-      const out = { events: [], lean: 0, cadence: 0, running: false, effort: 0, kneeLift: 0, handsOverhead: false, wristSpeedL: 0, wristSpeedR: 0 };
+      const out = { events: [], turn: 0, yaw: 0, lean: 0, steerSuppressed: false, cadence: 0, running: false, effort: 0, kneeLift: 0, handsOverhead: false, wristSpeedL: 0, wristSpeedR: 0 };
       for (const d of this.list) d.update(ctx, out);
       return out;
     }
@@ -837,15 +916,15 @@
 
 // ---- engine/locomotion.js ----
 // Locomotion state machine (spec: "Locomotion state machine"). Marching
-// drives you forward, lean steers, and turns are discrete gestures, so the
-// player never twists away from the camera. It reads events (step, run_start,
-// run_end, turn_around, point) and the cadence and lean signals, so camera
-// and touch demo drive it the same way.
+// drives you forward, a torso turn inside a short arc steers, and big turns
+// are discrete gestures, so the player never turns away from the camera. It
+// reads events (step, run_start, run_end, turn_around, point) and the
+// cadence and turn signals, so camera and touch demo drive it the same way.
 //
 // The game describes its movement model with engine.set_movement():
-//   rails: true snaps movement to paths (manhattan-miles): lean slides you
+//   rails: true snaps movement to paths (manhattan-miles): turn slides you
 //          sideways, a point at an intersection takes that street
-//   rails: false is free movement (stomp-city): lean sets the turn rate
+//   rails: false is free movement (stomp-city): turn sets the turn rate
 //   at_intersection(), branch_bearing(side), target_bearing() are optional hooks
 (function (g) {
   'use strict';
@@ -886,7 +965,7 @@
       else if (name === 'point' && payload) this.pending.point = payload.side;
     }
 
-    // t in ms; sig: {cadence_spm, lean}; mode: explore | combat | transit
+    // t in ms; sig: {cadence_spm, turn}; mode: explore | combat | transit
     update(t, sig, mode) {
       const dt = this.t === null ? 0 : RE.clamp((t - this.t) / 1000, 0, 0.1);
       this.t = t;
@@ -926,11 +1005,11 @@
           this.targetSpeed = 0;
         }
         if (m.rails) {
-          // lean slides you across the sidewalk; rails handle the street path
-          this.lateral = sig.lean || 0;
+          // turning slides you across the sidewalk; rails handle the street path
+          this.lateral = sig.turn || 0;
         } else {
-          // free movement: lean sets the turn rate
-          this.facing = wrap(this.facing + (sig.lean || 0) * c.maxTurnRate * dt);
+          // free movement: turn sets the turn rate
+          this.facing = wrap(this.facing + (sig.turn || 0) * c.maxTurnRate * dt);
         }
       }
 
@@ -991,8 +1070,8 @@
   RE.MOVE_TEST = Object.freeze([
     { id: 'march', prompt: 'March four steps', event: 'step', count: 4 },
     { id: 'high_knees', prompt: 'Two high knees', event: 'run_start', count: 1 },
-    { id: 'lean_left', prompt: 'Lean left', event: 'lean_left', count: 1 },
-    { id: 'lean_right', prompt: 'Lean right', event: 'lean_right', count: 1 },
+    { id: 'turn_left', prompt: 'Turn your body left', event: 'turn_left', count: 1 },
+    { id: 'turn_right', prompt: 'Turn your body right', event: 'turn_right', count: 1 },
     { id: 'point_left', prompt: 'Point left', event: 'point', match: { side: 'left' }, count: 1 },
     { id: 'point_right', prompt: 'Point right', event: 'point', match: { side: 'right' }, count: 1 },
     { id: 'squat', prompt: 'One squat', event: 'squat', count: 1 },
@@ -1188,7 +1267,7 @@
     clear(preset, orientation) { RE.storage.remove(this.key(preset, orientation)); },
   };
 
-  // Fires once when shoulder width stays more than driftRatio off baseline
+  // Fires once when torso length stays more than driftRatio off baseline
   // for driftHoldMs, then re-arms when the player is back in range.
   class DriftMonitor {
     constructor(cfg) { this.cfg = cfg.calibration; this.since = null; this.fired = false; }
@@ -1451,7 +1530,7 @@
 // games are playable and testable from a phone with no tracking running.
 //   Left thumb zone: tap in rhythm = march (tap speed sets cadence).
 //                    Double-tap and hold = run.
-//   Right thumb zone: drag sideways = lean.
+//   Right thumb zone: drag sideways = turn.
 //   Buttons: point L/R, turn around, jab, cross, hook, guard (hold),
 //            squat, drive up, stomp.
 (function (g) {
@@ -1465,7 +1544,7 @@
       this.emit = emit;
       this.steps = [];
       this.leg = 'left';
-      this.lean = 0;
+      this.turn = 0;
       this.guard = false;
       this.squatUntil = 0;
       this.running = false;
@@ -1505,7 +1584,7 @@
       g.clearTimeout(this.runTimer);
       this.emit('run_end', {});
     }
-    setLean(v) { this.lean = RE.clamp(v, -1, 1); }
+    setTurn(v) { this.turn = RE.clamp(v, -1, 1); }
     press(action, now) {
       const strike = (hand, type) => this.emit('strike', { hand, type, power: 1 });
       switch (action) {
@@ -1527,7 +1606,8 @@
         cadence_spm: cadence,
         effort: RE.clamp(cadence / this.cfg.runCadence, 0, 1),
         speed: 0, // the engine fills this in from the locomotion state machine
-        lean: this.lean,
+        turn: this.turn,
+        lean: 0,
         squat_depth: now < this.squatUntil ? 1 : 0,
         guard_up: this.guard,
         confidence: 1,
@@ -1570,7 +1650,7 @@
       left.textContent = 'Tap to march · double-tap and hold to run';
       const right = doc.createElement('div');
       right.className = 're-demo-zone';
-      right.textContent = 'Drag sideways to lean';
+      right.textContent = 'Drag sideways to turn';
       const bar = doc.createElement('div');
       bar.className = 're-demo-buttons';
       for (const [action, label] of BUTTONS) {
@@ -1604,9 +1684,9 @@
       right.addEventListener('pointermove', (e) => {
         if (startX === null) return;
         const width = right.getBoundingClientRect().width || 1;
-        input.setLean((e.clientX - startX) / (width * 0.4));
+        input.setTurn((e.clientX - startX) / (width * 0.4));
       });
-      const rightUp = () => { startX = null; right.classList.remove('is-active'); input.setLean(0); };
+      const rightUp = () => { startX = null; right.classList.remove('is-active'); input.setTurn(0); };
       right.addEventListener('pointerup', rightUp);
       right.addEventListener('pointercancel', rightUp);
 
@@ -1626,6 +1706,7 @@
 
   const BARS = [
     // [label, getter, min, max]
+    ['turn', (s) => s.turn, -1, 1],
     ['lean', (s) => s.lean, -1, 1],
     ['squat', (s) => s.squat_depth, 0, 1],
     ['cadence', (s) => s.cadence_spm, 0, 220],
@@ -1902,9 +1983,10 @@
       if (!low && st.lowConfidence) emitter.emit('confidence_ok', {});
       st.lowConfidence = low;
 
-      // drift: player moved closer or farther than the baseline
-      if (st.cal && !low && st.drift.update(sig.shoulderRatio, raw.t)) {
-        emitter.emit('recalibrate_suggested', { reason: 'distance', shoulderRatio: sig.shoulderRatio });
+      // drift: player moved closer or farther than the baseline. Torso length,
+      // not shoulder width, so a torso turn is never mistaken for distance.
+      if (st.cal && !low && st.drift.update(sig.torsoRatio, raw.t)) {
+        emitter.emit('recalibrate_suggested', { reason: 'distance', torsoRatio: sig.torsoRatio });
       }
 
       if (st.source !== 'demo') {
@@ -1914,11 +1996,12 @@
           : null;
         if (st.det) for (const [name, payload] of st.det.events) emitter.emit(name, payload);
         const det = st.det;
-        st.loco.update(raw.t, { cadence_spm: det ? det.cadence : 0, lean: det ? det.lean : 0 }, st.mode);
+        st.loco.update(raw.t, { cadence_spm: det ? det.cadence : 0, turn: det ? det.turn : 0 }, st.mode);
         st.snapshot = Object.assign(emptySnapshot(), {
           cadence_spm: det ? det.cadence : 0,
           effort: det ? det.effort : 0,
           speed: st.loco.speed,
+          turn: det ? det.turn : 0,
           lean: det ? det.lean : 0,
           squat_depth: sig.squatDepth != null && !low ? sig.squatDepth : 0,
           confidence: sig.confidence,
@@ -2124,7 +2207,7 @@
   };
 
   function emptySnapshot() {
-    return { cadence_spm: 0, effort: 0, speed: 0, lean: 0, squat_depth: 0, guard_up: false, confidence: 0 };
+    return { cadence_spm: 0, effort: 0, speed: 0, turn: 0, lean: 0, squat_depth: 0, guard_up: false, confidence: 0 };
   }
 })(globalThis);
 </script>
@@ -2198,7 +2281,7 @@
   $('demoBtn').addEventListener('click', () => {
     engine.enable_demo($('demo'));
     setLive(false);
-    say('Demo mode: left zone marches, right zone leans, buttons fire events.');
+    say('Demo mode: left zone marches, right zone turns, buttons fire events.');
   });
 
   $('calibrate').addEventListener('click', () => {
@@ -2273,8 +2356,8 @@
     say(acc.frames ? `Replay done: ${acc.frames} calibrated frames.` : 'Replay done, but the clip never calibrated. Start clips standing still.');
   });
 
-  const COUNTED = ['step', 'run_start', 'run_end', 'lean_left', 'lean_right', 'point', 'turn_around', 'wave'];
-  const EVENT_ROWS = ['step', 'run_start', 'run_end', 'lean_left', 'lean_right', 'point left', 'point right', 'turn_around', 'wave'];
+  const COUNTED = ['step', 'run_start', 'run_end', 'turn_left', 'turn_right', 'lean_left', 'lean_right', 'point', 'turn_around', 'wave'];
+  const EVENT_ROWS = ['step', 'run_start', 'run_end', 'turn_left', 'turn_right', 'lean_left', 'lean_right', 'point left', 'point right', 'turn_around', 'wave'];
 
   function renderStats() {
     const el = $('stats');

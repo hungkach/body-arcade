@@ -109,9 +109,10 @@
       if (!low && st.lowConfidence) emitter.emit('confidence_ok', {});
       st.lowConfidence = low;
 
-      // drift: player moved closer or farther than the baseline
-      if (st.cal && !low && st.drift.update(sig.shoulderRatio, raw.t)) {
-        emitter.emit('recalibrate_suggested', { reason: 'distance', shoulderRatio: sig.shoulderRatio });
+      // drift: player moved closer or farther than the baseline. Torso length,
+      // not shoulder width, so a torso turn is never mistaken for distance.
+      if (st.cal && !low && st.drift.update(sig.torsoRatio, raw.t)) {
+        emitter.emit('recalibrate_suggested', { reason: 'distance', torsoRatio: sig.torsoRatio });
       }
 
       if (st.source !== 'demo') {
@@ -121,11 +122,12 @@
           : null;
         if (st.det) for (const [name, payload] of st.det.events) emitter.emit(name, payload);
         const det = st.det;
-        st.loco.update(raw.t, { cadence_spm: det ? det.cadence : 0, lean: det ? det.lean : 0 }, st.mode);
+        st.loco.update(raw.t, { cadence_spm: det ? det.cadence : 0, turn: det ? det.turn : 0 }, st.mode);
         st.snapshot = Object.assign(emptySnapshot(), {
           cadence_spm: det ? det.cadence : 0,
           effort: det ? det.effort : 0,
           speed: st.loco.speed,
+          turn: det ? det.turn : 0,
           lean: det ? det.lean : 0,
           squat_depth: sig.squatDepth != null && !low ? sig.squatDepth : 0,
           confidence: sig.confidence,
@@ -331,6 +333,6 @@
   };
 
   function emptySnapshot() {
-    return { cadence_spm: 0, effort: 0, speed: 0, lean: 0, squat_depth: 0, guard_up: false, confidence: 0 };
+    return { cadence_spm: 0, effort: 0, speed: 0, turn: 0, lean: 0, squat_depth: 0, guard_up: false, confidence: 0 };
   }
 })(globalThis);

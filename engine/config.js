@@ -52,11 +52,26 @@
         startSteps: 2,  // consecutive high-knee steps that start a run
         exitMs: 600,    // run ends after this long with no high-knee step
       },
+      // Torso turn steering: yaw from (shoulder width / torso length) against
+      // the calibrated ratio, direction from shoulder depth and the nose.
+      turn: {
+        deadzone: 15,     // degrees of torso yaw that still mean straight ahead
+        full: 45,         // degrees that give full turn rate
+        depthMin: 0.1,    // shoulder depth difference / shoulder width that gives a direction (about 6 degrees)
+        noseMin: 0.04,    // S, nose offset from the shoulder midpoint that gives a direction
+        eventLevel: 0.5,  // turn level that fires turn_left / turn_right
+        eventReset: 0.2,
+      },
+      // Lean is still measured (the lean signal), but turn steers.
       lean: {
         deadzone: 0.06,      // S
         full: 0.25,          // S, lean that reads as 1
-        wristSpeedMax: 2.0,  // S per second; faster wrists suppress steering (punches never steer)
-        suppressHoldMs: 150, // steering stays off this long after the wrists slow down
+        // S per second; faster wrists suppress turn and lean (punches never
+        // steer). The spec's 2 S/s cut steering on every arm swing once the
+        // torso is turned (swing then moves sideways in the image: up to 4 S/s
+        // marching, 11 S/s high knees); swipes peak at 35 S/s and up.
+        wristSpeedMax: 12,
+        suppressHoldMs: 250, // steering stays off this long after the wrists slow down
         eventLevel: 0.5,     // steering level that fires lean_left / lean_right
         eventReset: 0.2,     // steering must return below this to fire again
       },
@@ -75,6 +90,7 @@
       },
       wave: {
         minSwing: 0.15,  // S, sideways wrist travel that counts as one direction change
+        minAbove: 0.25,  // T, wrist this far above its shoulder (a swipe at shoulder height is not a wave)
         reversals: 2,
         windowMs: 1000,
         cooldownMs: 2000,
@@ -94,7 +110,7 @@
         stopMs: 400,           // coast to a stop over this long
         stopAfterMs: 600,      // no step for this long (or 1.5 step intervals, if longer) stops you
         stopIntervals: 1.5,
-        maxTurnRate: 90,       // degrees per second at full lean (free movement)
+        maxTurnRate: 90,       // degrees per second at full turn (free movement)
       },
       demo: {
         doubleTapMs: 350,

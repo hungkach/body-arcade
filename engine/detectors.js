@@ -1,5 +1,5 @@
-// Locomotion gesture detectors: march steps, high knees (run), lean steer,
-// point turn, turn around and wave. Each reads the per-frame signals in body
+// Locomotion gesture detectors: march steps, high knees (run), torso turn
+// steering, lean, point turn, turn around and wave. Each reads the per-frame signals in body
 // units (S = shoulder width, T = torso length, +x = player's right, +y = up)
 // and pushes events; games only ever see the events and the snapshot.
 (function (g) {
@@ -8,7 +8,7 @@
   const L = RE.LM;
 
   RE.detectors = RE.detectors || new Set();
-  for (const name of ['step', 'run_start', 'run_end', 'lean_left', 'lean_right', 'point', 'turn_around', 'wave']) {
+  for (const name of ['step', 'run_start', 'run_end', 'turn_left', 'turn_right', 'lean_left', 'lean_right', 'point', 'turn_around', 'wave']) {
     RE.detectors.add(name);
   }
 
@@ -143,8 +143,9 @@
     }
   }
 
-  // Lean steer: shoulder midpoint x minus hip midpoint x, through a deadzone,
-  // scaled to -1..1. Fast wrists (punches, swipes) switch steering off.
+  // Lean: shoulder midpoint x minus hip midpoint x, through a deadzone,
+  // scaled to -1..1. Fast wrists (punches, swipes) switch it off, and the
+  // same suppression gates turn steering below.
   class LeanDetector {
     constructor(cfg) {
       this.c = cfg.lean;
@@ -157,10 +158,10 @@
       const s = ctx.sig;
       const speed = Math.max(out.wristSpeedL, out.wristSpeedR);
       if (speed > this.c.wristSpeedMax) this.suppressUntil = t + this.c.suppressHoldMs;
-      out.leanSuppressed = t < this.suppressUntil;
+      out.steerSuppressed = t < this.suppressUntil;
 
       let steer = 0;
-      if (!ctx.low && !out.leanSuppressed) {
+      if (!ctx.low && !out.steerSuppressed) {
         const mag = (Math.abs(s.lean) - this.c.deadzone) / (this.c.full - this.c.deadzone);
         if (mag > 0) steer = Math.sign(s.lean) * Math.min(mag, 1);
       }
@@ -172,6 +173,65 @@
           this.armed[side] = false;
           out.events.push(['lean_' + side, { lean: steer }]);
         } else if (!this.armed[side] && level < this.c.eventReset) {
+          this.armed[side] = true;
+        }
+      }
+    }
+  }
+
+  // Torso turn steering. Shoulder width shrinks with the cosine of torso yaw
+  // while torso length does not, and both scale with distance, so
+  //   cos(yaw) = (shoulder width / torso length) / calibrated ratio
+  // reads the same whether the player stands closer or farther. That gives
+  // the size of the turn; the direction comes from which shoulder is nearer
+  // the camera in world landmarks, cross-checked against the nose offset
+  // from the shoulder midpoint (the nose sits in front of the shoulders).
+  class TurnDetector {
+    constructor(cfg) {
+      this.c = cfg.turn;
+      this.armed = { left: true, right: true };
+    }
+
+    direction(ctx) {
+      const c = this.c;
+      let depth = 0;
+      const w = ctx.world;
+      if (w && seen(ctx, L.L_SHOULDER) && seen(ctx, L.R_SHOULDER)) {
+        const ls = w[L.L_SHOULDER], rs = w[L.R_SHOULDER];
+        const width = Math.hypot(ls.x - rs.x, ls.y - rs.y, ls.z - rs.z);
+        // world z grows away from the camera: right shoulder farther = turned right
+        const dz = width > 0 ? (rs.z - ls.z) / width : 0;
+        if (Math.abs(dz) >= c.depthMin) depth = Math.sign(dz);
+      }
+      let nose = 0;
+      if (seen(ctx, L.NOSE)) {
+        const off = ctx.sig.body.nose.x - ctx.sig.body.sMid.x;
+        if (Math.abs(off) >= c.noseMin) nose = Math.sign(off);
+      }
+      // both cues present but disagreeing: do not steer
+      if (depth && nose && depth !== nose) return 0;
+      return depth || nose;
+    }
+
+    update(ctx, out) {
+      const c = this.c;
+      const s = ctx.sig;
+      out.turn = 0;
+      out.yaw = 0;
+      if (ctx.low || !(s.torsoRatio > 0)) return;
+      const cosYaw = RE.clamp(s.shoulderRatio / s.torsoRatio, 0, 1);
+      const mag = (Math.acos(cosYaw) * 180) / Math.PI;
+      const dir = this.direction(ctx);
+      out.yaw = dir * mag;
+      const k = (mag - c.deadzone) / (c.full - c.deadzone);
+      if (dir && k > 0 && !out.steerSuppressed) out.turn = dir * Math.min(k, 1);
+
+      for (const side of ['left', 'right']) {
+        const level = side === 'left' ? -out.turn : out.turn;
+        if (this.armed[side] && level >= c.eventLevel) {
+          this.armed[side] = false;
+          out.events.push(['turn_' + side, { turn: out.turn }]);
+        } else if (!this.armed[side] && level < c.eventReset) {
           this.armed[side] = true;
         }
       }
@@ -260,7 +320,7 @@
     }
   }
 
-  // Wave: wrist above its shoulder, swinging side to side. Counts direction
+  // Wave: wrist well above its shoulder, swinging side to side. Counts direction
   // changes of at least minSwing S; enough of them inside the window fire.
   class WaveDetector {
     constructor(cfg) {
@@ -278,7 +338,7 @@
         const s = hand === 'left' ? b.ls : b.rs;
         const w = hand === 'left' ? b.lw : b.rw;
         // both hands overhead is the turn-around gesture, not a wave
-        if (ctx.low || out.handsOverhead || !seen(ctx, wi) || w.y <= s.y) { this.hands[hand] = fresh(); continue; }
+        if (ctx.low || out.handsOverhead || !seen(ctx, wi) || w.y - s.y < this.c.minAbove) { this.hands[hand] = fresh(); continue; }
         const x = w.x - s.x;
         let reversed = false;
         if (h.dir === 0) {
@@ -311,13 +371,13 @@
 
   // All locomotion detectors, run in order once per frame.
   // ctx: {t (ms), w, h, points (smoothed px), raw (unsmoothed px), world, cal, sig, low, holdVis}
-  // Returns {events: [[name, payload]], lean, cadence, running, effort, ...}
+  // Returns {events: [[name, payload]], turn, yaw, lean, cadence, running, effort, ...}
   RE.LocomotionDetectors = class LocomotionDetectors {
     constructor(cfg) {
-      this.list = [new WristSpeed(), new StepDetector(cfg), new LeanDetector(cfg), new TurnAroundDetector(cfg), new PointDetector(cfg), new WaveDetector(cfg)];
+      this.list = [new WristSpeed(), new StepDetector(cfg), new LeanDetector(cfg), new TurnDetector(cfg), new TurnAroundDetector(cfg), new PointDetector(cfg), new WaveDetector(cfg)];
     }
     update(ctx) {
-      const out = { events: [], lean: 0, cadence: 0, running: false, effort: 0, kneeLift: 0, handsOverhead: false, wristSpeedL: 0, wristSpeedR: 0 };
+      const out = { events: [], turn: 0, yaw: 0, lean: 0, steerSuppressed: false, cadence: 0, running: false, effort: 0, kneeLift: 0, handsOverhead: false, wristSpeedL: 0, wristSpeedR: 0 };
       for (const d of this.list) d.update(ctx, out);
       return out;
     }

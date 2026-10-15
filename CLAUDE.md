@@ -29,7 +29,7 @@ Mark's camera body-tracking fitness games for a phone or tablet. All games share
 ## Milestones
 
 1. Foundation: done (calibration, normalization, smoothing, overlay, demo mode, clip recorder).
-2. Locomotion: done (march, high knees, lean steer, point turn, turn around, wave, locomotion state machine, build folder discovery, smoothing lag about 50 ms). Step lift reads world landmarks; confirm on a real phone clip, and `march.liftSource: 'image'` is the fallback.
+2. Locomotion: done (march, high knees, torso turn steering replacing lean steer, point turn, turn around, wave, locomotion state machine, build folder discovery, smoothing lag about 50 ms). Step lift reads world landmarks; confirm on a real phone clip, and `march.liftSource: 'image'` is the fallback.
 3. stomp-city on the engine.
 4. Combat module.
 5. manhattan-miles hookup.

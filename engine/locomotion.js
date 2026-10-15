@@ -1,13 +1,13 @@
 // Locomotion state machine (spec: "Locomotion state machine"). Marching
-// drives you forward, lean steers, and turns are discrete gestures, so the
-// player never twists away from the camera. It reads events (step, run_start,
-// run_end, turn_around, point) and the cadence and lean signals, so camera
-// and touch demo drive it the same way.
+// drives you forward, a torso turn inside a short arc steers, and big turns
+// are discrete gestures, so the player never turns away from the camera. It
+// reads events (step, run_start, run_end, turn_around, point) and the
+// cadence and turn signals, so camera and touch demo drive it the same way.
 //
 // The game describes its movement model with engine.set_movement():
-//   rails: true snaps movement to paths (manhattan-miles): lean slides you
+//   rails: true snaps movement to paths (manhattan-miles): turn slides you
 //          sideways, a point at an intersection takes that street
-//   rails: false is free movement (stomp-city): lean sets the turn rate
+//   rails: false is free movement (stomp-city): turn sets the turn rate
 //   at_intersection(), branch_bearing(side), target_bearing() are optional hooks
 (function (g) {
   'use strict';
@@ -48,7 +48,7 @@
       else if (name === 'point' && payload) this.pending.point = payload.side;
     }
 
-    // t in ms; sig: {cadence_spm, lean}; mode: explore | combat | transit
+    // t in ms; sig: {cadence_spm, turn}; mode: explore | combat | transit
     update(t, sig, mode) {
       const dt = this.t === null ? 0 : RE.clamp((t - this.t) / 1000, 0, 0.1);
       this.t = t;
@@ -88,11 +88,11 @@
           this.targetSpeed = 0;
         }
         if (m.rails) {
-          // lean slides you across the sidewalk; rails handle the street path
-          this.lateral = sig.lean || 0;
+          // turning slides you across the sidewalk; rails handle the street path
+          this.lateral = sig.turn || 0;
         } else {
-          // free movement: lean sets the turn rate
-          this.facing = wrap(this.facing + (sig.lean || 0) * c.maxTurnRate * dt);
+          // free movement: turn sets the turn rate
+          this.facing = wrap(this.facing + (sig.turn || 0) * c.maxTurnRate * dt);
         }
       }
 

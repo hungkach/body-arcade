@@ -11,8 +11,8 @@
   RE.MOVE_TEST = Object.freeze([
     { id: 'march', prompt: 'March four steps', event: 'step', count: 4 },
     { id: 'high_knees', prompt: 'Two high knees', event: 'run_start', count: 1 },
-    { id: 'lean_left', prompt: 'Lean left', event: 'lean_left', count: 1 },
-    { id: 'lean_right', prompt: 'Lean right', event: 'lean_right', count: 1 },
+    { id: 'turn_left', prompt: 'Turn your body left', event: 'turn_left', count: 1 },
+    { id: 'turn_right', prompt: 'Turn your body right', event: 'turn_right', count: 1 },
     { id: 'point_left', prompt: 'Point left', event: 'point', match: { side: 'left' }, count: 1 },
     { id: 'point_right', prompt: 'Point right', event: 'point', match: { side: 'right' }, count: 1 },
     { id: 'squat', prompt: 'One squat', event: 'squat', count: 1 },
@@ -208,7 +208,7 @@
     clear(preset, orientation) { RE.storage.remove(this.key(preset, orientation)); },
   };
 
-  // Fires once when shoulder width stays more than driftRatio off baseline
+  // Fires once when torso length stays more than driftRatio off baseline
   // for driftHoldMs, then re-arms when the player is back in range.
   class DriftMonitor {
     constructor(cfg) { this.cfg = cfg.calibration; this.since = null; this.fired = false; }

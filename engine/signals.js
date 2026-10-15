@@ -80,8 +80,11 @@
     const useWorld = cfg.march.liftSource !== 'image' && out.kneeLiftWL != null;
     out.stepLiftL = useWorld ? out.kneeLiftWL : out.kneeLiftL;
     out.stepLiftR = useWorld ? out.kneeLiftWR : out.kneeLiftR;
-    // shoulder width now vs calibration: drifts when the player moves closer/farther
+    // shoulder width and torso length now vs calibration. Both scale with
+    // distance; only shoulder width shrinks when the torso turns, so torso
+    // length tracks distance and their quotient tracks the turn.
     out.shoulderRatio = RE.dist(points[L.L_SHOULDER], points[L.R_SHOULDER]) / cal.shoulderWidth;
+    out.torsoRatio = RE.dist(RE.mid(points[L.L_SHOULDER], points[L.R_SHOULDER]), RE.mid(points[L.L_HIP], points[L.R_HIP])) / cal.torsoLength;
     out.body = { ls, rs, lh, rh, lk, rk, sMid, hMid, nose, le, re, lw, rw };
     return out;
   };

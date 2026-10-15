@@ -102,7 +102,7 @@
   $('demoBtn').addEventListener('click', () => {
     engine.enable_demo($('demo'));
     setLive(false);
-    say('Demo mode: left zone marches, right zone leans, buttons fire events.');
+    say('Demo mode: left zone marches, right zone turns, buttons fire events.');
   });
 
   $('calibrate').addEventListener('click', () => {
@@ -177,8 +177,8 @@
     say(acc.frames ? `Replay done: ${acc.frames} calibrated frames.` : 'Replay done, but the clip never calibrated. Start clips standing still.');
   });
 
-  const COUNTED = ['step', 'run_start', 'run_end', 'lean_left', 'lean_right', 'point', 'turn_around', 'wave'];
-  const EVENT_ROWS = ['step', 'run_start', 'run_end', 'lean_left', 'lean_right', 'point left', 'point right', 'turn_around', 'wave'];
+  const COUNTED = ['step', 'run_start', 'run_end', 'turn_left', 'turn_right', 'lean_left', 'lean_right', 'point', 'turn_around', 'wave'];
+  const EVENT_ROWS = ['step', 'run_start', 'run_end', 'turn_left', 'turn_right', 'lean_left', 'lean_right', 'point left', 'point right', 'turn_around', 'wave'];
 
   function renderStats() {
     const el = $('stats');

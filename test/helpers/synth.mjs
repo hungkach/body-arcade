@@ -5,6 +5,9 @@
 //
 // A motion is a function of time returning a pose description:
 //   lean   upper body tilt (radians, + toward the player's right)
+//   yaw    torso turn about the vertical axis (radians, + = turned to the
+//          player's right); hips follow by hipYaw (fraction, default 0.3)
+//   headYaw  extra head turn on top of yaw (radians), moves only the nose
 //   drop   hip drop (m), as in a squat
 //   bob    whole body vertical offset (m), shiftX whole body sideways (m, camera +x)
 //   thighL, thighR   hip flexion (radians, 0 = standing, pi/2 = thigh level)
@@ -18,7 +21,7 @@
 // Heights from the floor in meters, x to the player's LEFT is camera +x
 // (the player faces the camera, so their right side is on camera -x).
 const BASE = {
-  0: [0, 1.65, 0],          // nose
+  0: [0, 1.65, -0.1],       // nose, in front of the shoulder plane
   11: [0.2, 1.45, 0], 12: [-0.2, 1.45, 0],   // shoulders L, R
   13: [0.26, 1.16, 0], 14: [-0.26, 1.16, 0], // elbows
   15: [0.28, 0.88, 0], 16: [-0.28, 0.88, 0], // wrists
@@ -82,8 +85,23 @@ function pose3d(m) {
   }
 
   const lean = m.lean || 0, drop = m.drop || 0, bob = m.bob || 0, shiftX = m.shiftX || 0;
+  const yaw = m.yaw || 0, hipYaw = yaw * (m.hipYaw == null ? 0.3 : m.hipYaw);
   for (const [k, p] of Object.entries(pts)) {
     const i = Number(k);
+    const a = UPPER.has(i) ? yaw : i === 23 || i === 24 ? hipYaw : 0;
+    if (a) {
+      // turn about the vertical axis through the hip midpoint; turning to the
+      // player's right swings their front toward camera -x, so the left
+      // shoulder comes toward the camera
+      const x = p[0], z = p[2];
+      p[0] = x * Math.cos(a) + z * Math.sin(a);
+      p[2] = -x * Math.sin(a) + z * Math.cos(a);
+    }
+    if (i === 0 && m.headYaw) {
+      const x = p[0], z = p[2], h = m.headYaw;
+      p[0] = x * Math.cos(h) + z * Math.sin(h);
+      p[2] = -x * Math.sin(h) + z * Math.cos(h);
+    }
     if (UPPER.has(i) && lean) {
       // rotate upper body about the hip midpoint in the frontal plane;
       // player's right is camera -x, so a right lean moves points toward -x
@@ -214,6 +232,21 @@ export const moves = {
     seg.expected.run_end = 1;
     return seg;
   },
+  // turn the torso to one side and back, peaking at deg (side: 'left' | 'right')
+  turn: (start, end, side, deg = 50) => ({
+    start, end, kind: 'turn', expected: { ['turn_' + side]: 1 },
+    apply(t, m) { m.yaw = (m.yaw || 0) + (side === 'right' ? 1 : -1) * (deg * Math.PI / 180) * envelope(t, start, end, (end - start) / 3); },
+  }),
+  // hold the torso turned at deg (signed, + = right) between start and end
+  // after a quick ramp; headDeg turns the head on top of it
+  holdTurn: (start, end, deg, rampS = 0.4, headDeg = 0) => ({
+    start, end, kind: 'turn', expected: {},
+    apply(t, m) {
+      const k = envelope(t, start, end, rampS);
+      m.yaw = (m.yaw || 0) + (deg * Math.PI / 180) * k;
+      m.headYaw = (m.headYaw || 0) + (headDeg * Math.PI / 180) * k;
+    },
+  }),
   // lean the upper body to one side and back (side: 'left' | 'right')
   lean: (start, end, side, angle = 0.26) => ({
     start, end, kind: 'lean', expected: { ['lean_' + side]: 1 },
@@ -227,10 +260,14 @@ export const moves = {
     rampS: 0.3,
     expected: { wave: 1 },
   }),
-  // fast sideways arm sweep at shoulder height (stands in for a hook in
-  // the lean suppression test)
+  // fast horizontal arm sweep at shoulder height, out to the side and across
+  // the front, wrist peaking near 7 m/s (stands in for a hook or swipe in the
+  // steering suppression tests)
   swipe: (start, end, hand) => armPose(start, end, {
-    [hand]: (t) => ({ a: 1.45, f: 0.9, a2: 1.45 + 0.9 * Math.sin(2 * Math.PI * 2.5 * (t - start)), f2: 1.0 }),
+    [hand]: (t) => {
+      const f = 0.8 - 0.8 * Math.cos(2 * Math.PI * 2.5 * (t - start));
+      return { a: Math.PI / 2, f, a2: Math.PI / 2, f2: f + 0.3 };
+    },
     rampS: 0.1,
   }),
 };
