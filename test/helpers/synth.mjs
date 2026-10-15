@@ -288,6 +288,8 @@ export const moves = {
     rampS: 0.3,
     expected: { wave: 1 },
   }),
+  // one fist up at the guard (the other hand down): a hand by the ear covers that side
+  guardHand: (start, end, hand) => armPose(start, end, { [hand]: GUARD, rampS: 0.2 }),
   // both fists up at the guard
   guard: (start, end) => armPose(start, end, { left: GUARD, right: GUARD, rampS: 0.2 }),
   // fighting stance: guard up and the torso bladed deg toward the lead side

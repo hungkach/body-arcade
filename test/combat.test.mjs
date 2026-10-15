@@ -45,6 +45,32 @@ for (const stance of ['orthodox', 'southpaw']) {
   });
 }
 
+// MediaPipe's world landmarks squash depth toward the camera, and a straight
+// goes right at it (0.6.0: on the first camera fights hooks and uppercuts
+// landed, straights did not). Squash the elbows' and wrists' world depth to
+// 30% of the truth: the image still shows the punch as foreshortening, and
+// the arm depth fix has to recover it.
+const squashDepth = (k) => (f) => {
+  for (const [s, e, w] of [[11, 13, 15], [12, 14, 16]]) {
+    const z0 = f.wl[s][2];
+    for (const i of [e, w]) f.wl[i][2] = z0 + (f.wl[i][2] - z0) * k;
+  }
+};
+test('straights register from foreshortening when world depth is squashed', () => {
+  for (const stance of ['orthodox', 'southpaw']) {
+    const { script, thrown } = combo(stance);
+    const want = thrown.map(([hand, type]) => label(stance, hand, type)).filter((x) => /jab|cross/.test(x));
+    for (const [name, r] of Object.entries(runAll(script, { onFrame: squashDepth(0.3) }))) {
+      const got = strikes(r).filter((x) => /jab|cross/.test(x));
+      assert.deepEqual(got, want, `${stance} ${name}`);
+    }
+  }
+  // and without the fix the same clip misses them (the test means something)
+  const { script } = combo('orthodox');
+  const off = runScript(script, VARIANTS.portrait, { onFrame: squashDepth(0.3), config: { combat: { depth: { minLen: 0, maxLen: 0 } } } });
+  assert.ok(strikes(off).filter((x) => /jab|cross/.test(x)).length < 2, `without the fix: ${strikes(off)}`);
+});
+
 test('portrait and landscape agree on strikes, guard and stance', () => {
   const { script } = combo('orthodox');
   const p = runScript(script, VARIANTS.portrait);
@@ -62,6 +88,16 @@ test('guard: up with fists by the face, down with hands at the sides', () => {
     assert.equal(at(7000), true, `${name}: no guard`);
     assert.equal(at(9800), false, `${name}: guard after`);
     assert.equal(strikes(r).length, 0, `${name}: raising the guard struck: ${strikes(r)}`);
+  }
+});
+
+test('each hand at the guard reads on its own: one hand by the ear covers that side', () => {
+  const script = scriptMotion([moves.guardHand(5.5, 8, 'right'), moves.guardHand(9, 11.5, 'left'), moves.guard(12.5, 15)]);
+  for (const [name, r] of Object.entries(runAll(script))) {
+    const at = (t) => r.frames.find((f) => f.t >= t).snap;
+    assert.deepEqual([at(7000).guard_left, at(7000).guard_right, at(7000).guard_up], [false, true, false], `${name}: right hand up`);
+    assert.deepEqual([at(10500).guard_left, at(10500).guard_right, at(10500).guard_up], [true, false, false], `${name}: left hand up`);
+    assert.deepEqual([at(14000).guard_left, at(14000).guard_right, at(14000).guard_up], [true, true, true], `${name}: both up`);
   }
 });
 

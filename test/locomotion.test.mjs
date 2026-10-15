@@ -61,6 +61,18 @@ test('marching moves the player at walking speed and stops after the last step',
   }
 });
 
+test('stride: low tired knees still walk, just shorter; higher knees stride longer at the same cadence', () => {
+  const speedOf = (thigh) => {
+    const r = runScript(scriptMotion([moves.march(5, 15, { thigh })]), VARIANTS.portrait);
+    const f = r.frames.find((x) => x.t >= 12000);
+    return { steps: r.count('step'), stride: f.snap.stride, speed: f.snap.speed };
+  };
+  const low = speedOf(0.6), mid = speedOf(0.87), high = speedOf(1.1);
+  assert.ok(low.steps >= 15, `low knees (about 34 degrees) still step: ${low.steps}`);
+  assert.ok(low.stride < 0.9 && low.speed < mid.speed, `low ${JSON.stringify(low)} mid ${JSON.stringify(mid)}`);
+  assert.ok(high.stride > mid.stride && high.speed > mid.speed, `high ${JSON.stringify(high)} mid ${JSON.stringify(mid)}`);
+});
+
 test('high knees start one run, run at run speed, and end it', () => {
   const script = scriptMotion([moves.march(5, 9), moves.highKnees(9, 19), moves.march(19, 23)]);
   for (const [name, r] of Object.entries(runAll(script))) {
@@ -74,7 +86,9 @@ test('high knees start one run, run at run speed, and end it', () => {
     assert.ok(end > 19000 && end < 19800, `${name}: run ended at ${end}`);
     const during = r.frames.find((f) => f.t >= 15000);
     assert.equal(during.loco.state, 'run');
-    assert.ok(Math.abs(during.snap.speed - cfg.locomotion.runSpeed) < 0.05, `${name}: run speed ${during.snap.speed}`);
+    // high knees run at runSpeed, longer still for higher knees (stride up to strideMax)
+    const want = cfg.locomotion.runSpeed * Math.min(cfg.locomotion.strideMax, Math.max(1, during.snap.stride));
+    assert.ok(Math.abs(during.snap.speed - want) < 0.05, `${name}: run speed ${during.snap.speed} vs ${want}`);
     assert.ok(during.snap.effort > 0.9, `${name}: effort ${during.snap.effort}`);
   }
 });

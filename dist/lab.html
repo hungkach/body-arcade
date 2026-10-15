@@ -32,7 +32,7 @@
   #stats th:first-child, #stats td:first-child { text-align: left; }
 </style>
 <script>
-/* rep-engine 0.5.3, inlined by build/build.mjs. Edit engine/, not this copy. */
+/* rep-engine 0.6.0, inlined by build/build.mjs. Edit engine/, not this copy. */
 // ---- engine/core.js ----
 // rep-engine core: namespace, landmark indices, small shared helpers.
 // Every engine file is a plain script that adds to globalThis.RepEngine,
@@ -41,7 +41,7 @@
   'use strict';
   const RE = (g.RepEngine = g.RepEngine || {});
 
-  RE.version = '0.5.3';
+  RE.version = '0.6.0';
 
   // MediaPipe Pose landmark indices (33-point model). "Left" and "right"
   // are the player's own anatomical sides.
@@ -187,10 +187,10 @@
       // two read the 2D image, so either source can carry a step alone.
       march: {
         cues: {
-          pitch: { on: 25, off: 12 },     // world: thigh angle from the calibrated vertical (degrees), above the other thigh's
-          lift: { on: 0.15, off: 0.08 },  // world: knee height above standing (T), above the other knee's
-          rise: { on: 0.16, off: 0.07 },  // image: knee height above its standing spot (T)
-          lead: { on: 0.14, off: 0.05 },  // image: this knee's rise minus the other knee's (T)
+          pitch: { on: 20, off: 10 },     // world: thigh angle from the calibrated vertical (degrees), above the other thigh's
+          lift: { on: 0.12, off: 0.06 },  // world: knee height above standing (T), above the other knee's
+          rise: { on: 0.12, off: 0.05 },  // image: knee height above its standing spot (T)
+          lead: { on: 0.11, off: 0.04 },  // image: this knee's rise minus the other knee's (T)
         },
         need: 2,
         refractoryMs: 250,   // per leg, after it fires
@@ -198,7 +198,12 @@
         // Warm-up tuning (engine.apply_capture): each cue's on is set to tuneFrac of
         // the weakest captured round that reached seenFrac of the default on, kept
         // within [minFrac, maxFrac] of the default; off goes to half of that.
-        tune: { tuneFrac: 0.5, seenFrac: 0.5, minFrac: 0.4, maxFrac: 1.5 },
+        tune: { tuneFrac: 0.4, seenFrac: 0.5, minFrac: 0.35, maxFrac: 1.5 }, // 0.6.0: 0.4 of the weakest round, room for tired knees
+        // stride from knee height (0.6.0, Mark: higher knees, longer strides; a
+        // tired player's lower knees still count, they just step shorter): each
+        // step's peak thigh angle over refPitch, or peak knee lift over refLift,
+        // averaged over the last `steps` steps, maps to a stride of min to max
+        stride: { refPitch: 50, refLift: 0.3, min: 0.7, max: 1.3, steps: 4 },
         squatPauseDrop: 0.2, // squat beats march: hip drop (T) past this pauses stepping
         liftSource: 'auto',  // 'auto' uses world landmarks when the profile has them, 'image' forces 2D
         cadenceWindowMs: 3000,
@@ -297,6 +302,14 @@
           downSpeed: 1.2,    // m/s downward
           refSpeed: 5,       // m/s of fist speed that is power 1
         },
+        // arm depth from foreshortening (ArmDepth in combat.js)
+        depth: {
+          decay: 0.02,    // m/s the reference segment length shrinks back
+          inPlane: 0.88,  // a segment at least this share of its reference reads as in the image plane
+          behind: 0.05,   // m: world depth saying the segment points back this much is kept
+          minLen: 0.15, maxLen: 0.42, // m, reference length bounds
+          fovDeg: 75,     // camera field of view on the long side of the frame (front cameras run 65 to 80)
+        },
         slip: {
           deadzone: 0.25,  // S, nose off the hip midpoint
           full: 0.55,
@@ -327,6 +340,7 @@
         walkCadence: 70,       // below this cadence the player stops
         refCadence: 110,       // cadence that gives exactly walkSpeed
         walkScale: [0.8, 1.2], // walk speed range as a multiple of walkSpeed
+        strideMax: 1.3,        // high knees on a run can lengthen the stride this far
         rampMs: 300,           // speed reaches its target over this long
         stopMs: 400,           // coast to a stop over this long
         stopAfterMs: 600,      // no step for this long (or 1.5 step intervals, if longer) stops you
@@ -734,6 +748,7 @@
       this.lastHighAt = -Infinity;
       this.running = false;
       this.peaks = [];
+      this.heights = [];
       // legs start held, so nothing fires until the knee is seen down
       const leg = () => ({ active: true, lastFire: -Infinity, lastStep: -Infinity, counted: false, interval: Infinity, peakPitch: 0, peakLift: 0 });
       this.legs = { left: leg(), right: leg() };
@@ -779,6 +794,10 @@
       out.cadence = RE.cadenceFromSteps(this.steps, t, this.m.cadenceWindowMs);
       out.running = this.running;
       out.kneeLift = this.peaks.length ? this.peaks.reduce((a, b) => a + b, 0) / this.peaks.length : 0;
+      // stride: 1 at a reference step, shorter for low knees, longer for high ones
+      const sc = this.m.stride;
+      const hAvg = this.heights.length ? this.heights.reduce((a, b) => a + b, 0) / this.heights.length : 1;
+      out.stride = RE.clamp(0.5 + 0.5 * hAvg, sc.min, sc.max);
       const active = out.cadence > 0;
       out.effort = active
         ? RE.clamp(0.7 * RE.clamp(out.cadence / this.e.fullCadence, 0, 1) + 0.3 * RE.clamp(out.kneeLift / this.e.fullLift, 0, 1), 0, 1)
@@ -830,6 +849,10 @@
       leg.counted = false;
       this.peaks.push(leg.peakLift);
       if (this.peaks.length > 4) this.peaks.shift();
+      // how high this step was, for the stride
+      const sc = this.m.stride;
+      this.heights.push(Math.max(leg.peakPitch / sc.refPitch, leg.peakLift / sc.refLift));
+      if (this.heights.length > sc.steps) this.heights.shift();
       const high = leg.peakLift >= this.r.lift || leg.peakPitch >= this.r.pitch;
       const fast = leg.interval <= 60000 / this.r.cadence;
       if (!high) { this.highCount = 0; return; }
@@ -1185,10 +1208,14 @@
         const interval = isFinite(this.interval) ? Math.min(this.interval, 60000 / c.walkCadence) : 0;
         const quiet = t - this.lastStepAt > Math.max(c.stopAfterMs, c.stopIntervals * interval);
         const cadence = sig.cadence_spm || 0;
-        if (this.running && !quiet) {
-          this.targetSpeed = c.runSpeed;
+        // speed is stride times cadence: faster knees step faster, higher knees
+        // step longer (sig.stride, from the knee height of the last few steps)
+        const stride = sig.stride || 1;
+        this.runTarget = this.running && !quiet;
+        if (this.runTarget) {
+          this.targetSpeed = c.runSpeed * RE.clamp(stride, 1, c.strideMax);
         } else if (cadence >= c.walkCadence && !quiet) {
-          this.targetSpeed = c.walkSpeed * RE.clamp(cadence / c.refCadence, c.walkScale[0], c.walkScale[1]);
+          this.targetSpeed = c.walkSpeed * RE.clamp(cadence / c.refCadence, c.walkScale[0], c.walkScale[1]) * stride;
         } else {
           this.targetSpeed = 0;
         }
@@ -1210,7 +1237,7 @@
         const diff = this.targetSpeed - this.speed;
         this.speed = Math.abs(diff) <= step ? this.targetSpeed : this.speed + Math.sign(diff) * step;
       }
-      this.state = this.speed === 0 && this.targetSpeed === 0 ? 'idle' : this.running && this.targetSpeed === c.runSpeed ? 'run' : 'walk';
+      this.state = this.speed === 0 && this.targetSpeed === 0 ? 'idle' : this.running && this.runTarget && this.targetSpeed > 0 ? 'run' : 'walk';
 
       if (dt > 0 && this.state !== 'idle') {
         const cad = sig.cadence_spm || 0;
@@ -1349,6 +1376,8 @@
         if (ctx.upperLow || !(l && r)) { this.up = false; this.since = null; }
       }
       out.guard = this.up;
+      // each hand on its own (a hand by the ear covers that side against a hook)
+      out.guardHands = { left: nl, right: nr };
     }
   }
 
@@ -1541,23 +1570,82 @@
     }
   }
 
+  // Arm depth (0.6.0, after the first camera fights: hooks and uppercuts
+  // landed, straights did not). MediaPipe's world landmarks judge depth
+  // poorly, and a straight goes right at the camera, so its world depth comes
+  // out squashed: the arm reads short and bent. The image shows the same punch
+  // as foreshortening, the arm looking shorter on screen than it is. fix()
+  // gives the elbow and wrist back the depth that foreshortening implies,
+  // against each segment's reference length (the longest it has looked lately,
+  // in meters at the body's scale, decaying slowly), toward the camera. World
+  // depth wins when it already says more, or says the segment points back.
+  class ArmDepth {
+    constructor(cfg) { this.c = cfg.combat.depth; this.ref = {}; this.t = null; }
+    fix(ctx, frame) {
+      const world = ctx.world, pts = ctx.points, c = this.c;
+      const dt = this.t == null ? 0 : Math.max(0, (ctx.t - this.t) / 1000);
+      this.t = ctx.t;
+      if (!pts) return world;
+      const ipx = RE.dist(RE.mid(pts[L.L_SHOULDER], pts[L.R_SHOULDER]), RE.mid(pts[L.L_HIP], pts[L.R_HIP]));
+      const wm = len(sub(RE.mid3(world[L.L_SHOULDER], world[L.R_SHOULDER]), RE.mid3(world[L.L_HIP], world[L.R_HIP])));
+      if (!(ipx > 0) || !(wm > 0)) return world;
+      const k = wm / ipx; // meters per pixel at the body
+      // perspective: a fist nearer the camera looks bigger, which hides part
+      // of its foreshortening. With the camera's focal length (from fovDeg on
+      // the long side) the body's distance is D = f * k, and a point d meters
+      // nearer than the body maps back to the body's scale by (D - d) / D.
+      const f = Math.max(ctx.w, ctx.h) / 2 / Math.tan((c.fovDeg * Math.PI) / 360);
+      const D = f * k, cx = ctx.w / 2, cy = ctx.h / 2;
+      const at = (p, d) => { const m = Math.max(0.2, (D - d) / D); return { x: cx + (p.x - cx) * m, y: cy + (p.y - cy) * m }; };
+      const out = world.slice();
+      const move = (p, d) => Object.assign({}, p, { x: p.x + frame.fwd.x * d, y: p.y + frame.fwd.y * d, z: p.z + frame.fwd.z * d });
+      for (const [S, E, W, side] of [[L.L_SHOULDER, L.L_ELBOW, L.L_WRIST, 'l'], [L.R_SHOULDER, L.R_ELBOW, L.R_WRIST, 'r']]) {
+        const zE = dot(sub(world[E], world[S]), frame.fwd), zF = dot(sub(world[W], world[E]), frame.fwd);
+        const l3u = len(sub(world[E], world[S])), l3f = len(sub(world[W], world[E]));
+        // two passes: depths from the image lengths, then the image lengths again
+        // with each point scaled back by its own depth
+        let dE = Math.max(0, zE), dW = dE + Math.max(0, zF), du = 0, df = 0, lu = 0, lf = 0;
+        for (let pass = 0; pass < 2; pass++) {
+          const s0 = at(pts[S], 0), e0 = at(pts[E], dE), w0 = at(pts[W], dW);
+          lu = RE.dist(s0, e0) * k; lf = RE.dist(e0, w0) * k;
+          const refU = Math.max(this.ref[side + 'u'] == null ? 0 : this.ref[side + 'u'] - c.decay * dt, pass ? 0 : Math.max(lu, l3u));
+          const refF = Math.max(this.ref[side + 'f'] == null ? 0 : this.ref[side + 'f'] - c.decay * dt, pass ? 0 : Math.max(lf, l3f));
+          const ru = RE.clamp(refU, c.minLen, c.maxLen), rf = RE.clamp(refF, c.minLen, c.maxLen);
+          du = Math.sqrt(Math.max(0, ru * ru - (lu / c.inPlane) ** 2));
+          df = Math.sqrt(Math.max(0, rf * rf - (lf / c.inPlane) ** 2));
+          if (!pass) { this.ref[side + 'u'] = ru; this.ref[side + 'f'] = rf; }
+          const nE = zE > -c.behind && du > zE ? du : zE;
+          const nF = zF > -c.behind && df > zF ? df : zF;
+          dE = Math.max(0, nE); dW = dE + Math.max(0, nF);
+        }
+        const nE = zE > -c.behind && du > zE ? du : zE;
+        const nF = zF > -c.behind && df > zF ? df : zF;
+        out[E] = move(world[E], nE - zE);
+        out[W] = move(world[W], nE - zE + nF - zF);
+      }
+      return out;
+    }
+  }
+
   // The arm pose for this frame, shared by the strike and stance detectors.
   class ArmPose {
+    constructor(cfg) { this.depth = new ArmDepth(cfg); }
     update(ctx, out) {
       out.arms = null;
       const frame = frameOf(ctx);
-      const pose = RE.armPose(ctx.world, frame, ctx.cal.shoulderWidthW);
+      const world = frame && ctx.world ? this.depth.fix(ctx, frame) : ctx.world;
+      const pose = RE.armPose(world, frame, ctx.cal.shoulderWidthW);
       if (!pose) return;
       pose.unitM = ctx.cal.shoulderWidthW || len(sub(ctx.world[L.R_SHOULDER], ctx.world[L.L_SHOULDER])) || 0.4;
       // the same arms in the torso's own frame (turns with the shoulders): hooks
       // sweep around the body, so a bladed stance must not tilt them toward the camera
-      pose.torso = RE.armPose(ctx.world, RE.bodyFrame(ctx.world, ctx.cal.up) || frame, ctx.cal.shoulderWidthW);
+      pose.torso = RE.armPose(world, RE.bodyFrame(world, ctx.cal.up) || frame, ctx.cal.shoulderWidthW);
       out.arms = pose;
     }
   }
 
   // run after the locomotion detectors (stance reads the turn detector's yaw)
-  RE.makeCombatDetectors = (cfg) => [new ArmPose(), new GuardDetector(cfg), new StanceDetector(cfg), new StrikeDetector(cfg), new SlipDetector(cfg), new LevelDetector(cfg)];
+  RE.makeCombatDetectors = (cfg) => [new ArmPose(cfg), new GuardDetector(cfg), new StanceDetector(cfg), new StrikeDetector(cfg), new SlipDetector(cfg), new LevelDetector(cfg)];
 
   // Fight state machine (spec update_combat; reworked in 0.5.0 after Mark's
   // camera test). Runs only in combat mode. target, from enter_combat, all
@@ -2326,6 +2414,9 @@
         squat_depth: now < this.squatUntil ? 1 : 0,
         level_low: now < this.squatUntil,
         guard_up: this.guard,
+        guard_left: this.guard,
+        guard_right: this.guard,
+        stride: 1,
         stance: this.stance,
         slip: now < this.slipUntil ? this.slip : 0,
         confidence: 1,
@@ -2771,7 +2862,7 @@
         if (st.det && st.capture.move === 'step' && st.det.stepCues) recordCues(st.det.stepCues);
         if (st.det) for (const [name, payload] of st.det.events) emitter.emit(name, payload);
         const det = st.det;
-        st.loco.update(raw.t, { cadence_spm: det ? det.cadence : 0, turn: det ? det.turn : 0 }, st.mode);
+        st.loco.update(raw.t, { cadence_spm: det ? det.cadence : 0, turn: det ? det.turn : 0, stride: det && det.stride ? det.stride : 1 }, st.mode);
         st.snapshot = Object.assign(emptySnapshot(), {
           cadence_spm: det ? det.cadence : 0,
           effort: det ? det.effort : 0,
@@ -2780,6 +2871,9 @@
           lean: det ? det.lean : 0,
           squat_depth: sig.squatDepth != null && sig.levelDrop != null ? sig.squatDepth : 0,
           guard_up: det ? det.guard : false,
+          guard_left: det && det.guardHands ? det.guardHands.left : false,
+          guard_right: det && det.guardHands ? det.guardHands.right : false,
+          stride: det && det.stride ? det.stride : 1,
           stance: det ? det.stance : 'square',
           slip: det ? det.slip : 0,
           level_low: det ? !!det.levelLow : false,
@@ -3087,7 +3181,7 @@
   };
 
   function emptySnapshot() {
-    return { cadence_spm: 0, effort: 0, speed: 0, turn: 0, lean: 0, squat_depth: 0, guard_up: false, stance: 'square', slip: 0, level_low: false, confidence: 0 };
+    return { cadence_spm: 0, effort: 0, speed: 0, turn: 0, lean: 0, squat_depth: 0, guard_up: false, guard_left: false, guard_right: false, stance: 'square', slip: 0, level_low: false, stride: 1, confidence: 0 };
   }
 })(globalThis);
 </script>
