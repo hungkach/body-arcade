@@ -32,6 +32,36 @@ const BASE = {
 const UPPER = new Set([0, 11, 12, 13, 14, 15, 16]);
 const HIP_Y = 0.95;
 const THIGH = 0.45, SHIN = 0.42, UPPER_ARM = 0.29, FOREARM = 0.28;
+
+// Body builds for robustness sweeps (synthClip opts.body): scale (overall
+// size, 1 = about 1.75 m), and relative proportions shoulder (width), arm,
+// leg and torso (lengths). makeBody(undefined) is the default body above.
+export const BODIES = {
+  short: { scale: 0.86 },
+  tall: { scale: 1.12 },
+  broad: { shoulder: 1.22 },
+  narrow: { shoulder: 0.84 },
+  longArms: { arm: 1.12 },
+  shortArms: { arm: 0.88 },
+  longLegs: { leg: 1.08, torso: 0.92 },
+  longTorso: { torso: 1.12, leg: 0.93 },
+};
+function makeBody(body) {
+  if (!body) return { BASE, HIP_Y, THIGH, SHIN, UPPER_ARM, FOREARM };
+  const k = body.scale || 1, sw = body.shoulder || 1, A = body.arm || 1, Lg = body.leg || 1, Tz = body.torso || 1;
+  const hipY = 0.95 * Lg, shY = hipY + 0.5 * Tz, sx = 0.2 * sw;
+  const b = {
+    0: [0, shY + 0.2 * Tz, -0.1],
+    11: [sx, shY, 0], 12: [-sx, shY, 0],
+    13: [sx + 0.06, shY - 0.29 * A, 0], 14: [-sx - 0.06, shY - 0.29 * A, 0],
+    15: [sx + 0.08, shY - 0.57 * A, 0], 16: [-sx - 0.08, shY - 0.57 * A, 0],
+    23: [0.15, hipY, 0], 24: [-0.15, hipY, 0],
+    25: [0.14, hipY - 0.45 * Lg, 0], 26: [-0.14, hipY - 0.45 * Lg, 0],
+    27: [0.14, hipY - 0.87 * Lg, 0], 28: [-0.14, hipY - 0.87 * Lg, 0],
+  };
+  for (const key of Object.keys(b)) b[key] = b[key].map((v) => v * k);
+  return { BASE: b, HIP_Y: hipY * k, THIGH: 0.45 * Lg * k, SHIN: 0.42 * Lg * k, UPPER_ARM: 0.29 * A * k, FOREARM: 0.28 * A * k };
+}
 // Arms hanging at the sides, matching BASE.
 export const ARM_REST = Object.freeze({ a: 0.2, f: 0, a2: 0.07, f2: 0 });
 
@@ -61,7 +91,8 @@ function dir(a, f, out) {
   return [out * Math.sin(a) * Math.cos(f), -Math.cos(a) * Math.cos(f), -Math.sin(f)];
 }
 
-function pose3d(m) {
+function pose3d(m, B = makeBody()) {
+  const { BASE, HIP_Y, THIGH, SHIN, UPPER_ARM, FOREARM } = B;
   const pts = {};
   for (const [k, p] of Object.entries(BASE)) pts[k] = p.slice();
 
@@ -138,11 +169,12 @@ export function synthClip(opts) {
   const gauss = gaussian(mulberry32(o.seed));
   // separate stream so image noise is identical with or without world noise
   const wgauss = gaussian(mulberry32(o.seed + 1000));
+  const B = makeBody(o.body);
   const frames = [];
   const n = Math.round(o.seconds * o.fps);
   for (let k = 0; k < n; k++) {
     const t = k / o.fps;
-    const p3 = pose3d(o.motion(t));
+    const p3 = pose3d(o.motion(t), B);
     // MediaPipe world landmarks: meters, origin at the hip midpoint, y down
     const hx = (p3[23][0] + p3[24][0]) / 2, hy = (p3[23][1] + p3[24][1]) / 2, hz = (p3[23][2] + p3[24][2]) / 2;
     const lm = [];
