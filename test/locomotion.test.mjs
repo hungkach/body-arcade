@@ -134,6 +134,18 @@ test('point, turn around and wave still fire with the knees out of view', () => 
   }
 });
 
+test('a raised or waving hand does not steer, even with the shoulders turned (0.6.2)', () => {
+  // waving tilts the shoulders like a torso turn; a turn alone still steers
+  const script = scriptMotion([moves.holdTurn(5, 9, 40), moves.wave(5.2, 8.8, 'right'), moves.holdTurn(11, 14, 40)]);
+  for (const [name, r] of Object.entries(runAll(script))) {
+    const during = r.frames.filter((f) => f.t >= 6000 && f.t <= 8500).map((f) => Math.abs(f.snap.turn));
+    assert.ok(Math.max(...during) < 0.05, `${name}: steered ${Math.max(...during).toFixed(2)} while waving`);
+    const after = r.frames.find((f) => f.t >= 13000).snap.turn;
+    assert.ok(Math.abs(after) > 0.3, `${name}: a plain turn steers ${after}`);
+    assert.equal(r.count('wave', { hand: 'right' }), 1, `${name}: the wave still counts`);
+  }
+});
+
 test('lean signal: deadzone, full scale, and fast wrists suppress it', () => {
   const r = gestures.portrait;
   const at = (ms) => r.frames.find((f) => f.t >= ms);
