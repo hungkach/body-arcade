@@ -20,6 +20,7 @@
       this.turn = 0;
       this.guard = false;
       this.squatUntil = 0;
+      this.topUntil = 0; // after a drive up: the half squat hold of the top position
       this.running = false;
       this.runTimer = 0;
       this.lastTapAt = -Infinity;
@@ -98,8 +99,10 @@
           this.stance = this.stance === 'orthodox' ? 'southpaw' : 'orthodox';
           this.emit('stance', { stance: this.stance });
           break;
-        case 'squat': this.squatUntil = now + 600; this.emit('squat', { depth: 1, speed: 1 }); break;
-        case 'drive_up': this.squatUntil = 0; this.emit('drive_up', { depth: 1, speed: 1 }); break;
+        case 'squat': this.squatUntil = now + 600; this.topUntil = 0; this.emit('squat', { depth: 1, speed: 1 }); break;
+        // a drive up lands you on top in a half squat, held a few seconds (a
+        // touch screen cannot hold a crouch), long enough for the down strikes
+        case 'drive_up': this.squatUntil = 0; this.topUntil = now + this.cfg.topHoldMs; this.emit('drive_up', { depth: 1, speed: 1 }); break;
         case 'stomp': this.emit('stomp', { leg: this.leg, power: 1 }); this.leg = this.leg === 'left' ? 'right' : 'left'; break;
         default: break;
       }
@@ -112,7 +115,7 @@
         speed: 0, // the engine fills this in from the locomotion state machine
         turn: this.turn,
         lean: 0,
-        squat_depth: now < this.squatUntil ? 1 : 0,
+        squat_depth: now < this.squatUntil ? 1 : now < this.topUntil ? 0.5 : 0,
         guard_up: this.guard,
         stance: this.stance,
         slip: now < this.slipUntil ? this.slip : 0,

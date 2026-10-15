@@ -205,7 +205,11 @@ test('done-when, demo: the dummy is struck, taken down, and finished', () => {
   e.signals();
   demo.press('drive_up', RE.now());
   assert.equal(e.combat().phase, 'top');
-  for (let i = 0; i < 3; i++) demo.press('jab', RE.now());
+  // the demo holds the half squat of the top position: no scramble while striking down
+  e.signals();
+  assert.equal(e.signals().squat_depth, 0.5);
+  for (let i = 0; i < 3; i++) { demo.press('jab', RE.now()); e.signals(); }
+  assert.equal(e.combat().phase, 'top');
   assert.ok(d.down && d.hp <= 0, `hp ${d.hp}, log ${log}`);
   assert.deepEqual(log.filter((n) => n !== 'strike'), ['shot', 'takedown', 'down_strike', 'down_strike', 'down_strike']);
   e.disable_demo();

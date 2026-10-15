@@ -192,6 +192,7 @@
         runHoldMs: 250,
         runCadence: 170,
         cadenceWindowMs: 3000,
+        topHoldMs: 6000,   // after a drive up, the demo holds a half squat this long
       },
       recorder: { maxMs: 30000, decimals: 4 },
       overlay: { eventLogSize: 10 },
