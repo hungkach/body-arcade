@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>rep-engine lab</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #181b22; --line: #2a2f3a; --text: #e9ecf1; --muted: #9aa3b2;
+    --accent: #3fd18a; --warn: #ffb347; --danger: #ff6b6b;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 15px/1.4 system-ui, -apple-system, sans-serif; }
+  body { display: flex; flex-direction: column; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+  header { padding: 10px 12px; border-bottom: 1px solid var(--line); background: var(--panel); }
+  h1 { font-size: 16px; margin: 0 0 8px; }
+  .row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  button, select, label.file { font: inherit; font-weight: 600; color: var(--text); background: #232834; border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; min-height: 40px; cursor: pointer; }
+  button.primary { background: var(--accent); color: #062014; border-color: transparent; }
+  button.rec { background: var(--danger); color: #fff; border-color: transparent; }
+  button:disabled { opacity: .45; cursor: default; }
+  label.file input { display: none; }
+  #status { margin-top: 8px; color: var(--muted); font-size: 13px; min-height: 18px; }
+  #stage { position: relative; flex: 1; min-height: 320px; background: #000; overflow: hidden; }
+  #stage video, #stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  #stage video { object-fit: contain; }
+  #stage video.mirror { transform: scaleX(-1); }
+  #demo { position: absolute; inset: 0; }
+  #stats { padding: 10px 12px; border-top: 1px solid var(--line); background: var(--panel); font-size: 13px; color: var(--muted); }
+  #stats table { border-collapse: collapse; width: 100%; color: var(--text); }
+  #stats th, #stats td { text-align: right; padding: 3px 6px; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+  #stats th:first-child, #stats td:first-child { text-align: left; }
+</style>
+<!-- rep-engine:inline -->
+</head>
+<body>
+<header>
+  <h1>rep-engine lab</h1>
+  <div class="row">
+    <select id="preset" aria-label="Camera preset"></select>
+    <button id="camera" class="primary">Start camera</button>
+    <button id="demoBtn">Demo mode</button>
+    <button id="calibrate" disabled>Calibrate</button>
+    <button id="record" disabled>Record 30 s</button>
+    <label class="file">Replay clip<input id="clipFile" type="file" accept=".json,application/json"></label>
+    <button id="clearProfile">Clear profile</button>
+    <button id="stop">Stop</button>
+  </div>
+  <div id="status">Prop the phone up, then start the camera. Three-finger tap toggles the overlay.</div>
+</header>
+<div id="stage">
+  <video id="video" playsinline muted></video>
+  <canvas id="overlay"></canvas>
+  <div id="demo"></div>
+</div>
+<div id="stats" hidden></div>
+
+<script>
+(function () {
+  'use strict';
+  const RE = window.RepEngine;
+  const $ = (id) => document.getElementById(id);
+  const video = $('video'), canvas = $('overlay'), status = $('status');
+  const presetSel = $('preset');
+
+  for (const p of Object.values(RE.presets)) {
+    const o = document.createElement('option');
+    o.value = p.id;
+    o.textContent = p.label + (p.distanceFt ? ` (${p.distanceFt} ft)` : '');
+    presetSel.appendChild(o);
+  }
+
+  const engine = RE.create({ video, preset: presetSel.value });
+  new RE.DebugOverlay(canvas, engine);
+
+  const say = (msg) => { status.textContent = msg; };
+  const setLive = (live) => { $('calibrate').disabled = !live; $('record').disabled = !live; };
+
+  engine.on('status', (e) => say(e.message));
+  engine.on('calibrated', (e) => {
+    const c = e.cal;
+    const extra = e.skippedTests ? ` Move test skipped (${e.skippedTests} prompts unlock with milestone 2 detectors).` : '';
+    say(`${e.fromProfile ? 'Loaded saved' : 'Saved'} ${c.orientation} profile: S ${c.shoulderWidth.toFixed(0)} px, T ${c.torsoLength.toFixed(0)} px.${extra}`);
+  });
+  engine.on('recalibrate_needed', (e) => say(`No ${e.orientation} profile yet. Tap Calibrate.`));
+  engine.on('recalibrate_suggested', () => say('You moved closer or farther than your baseline. Tap Calibrate to re-baseline.'));
+  engine.on('recording_done', (e) => { finishRecording(e.clip); });
+
+  $('camera').addEventListener('click', async () => {
+    video.classList.toggle('mirror', !!RE.presets[presetSel.value].mirrorDisplay);
+    try {
+      await engine.start(presetSel.value);
+      setLive(true);
+      say(engine.is_calibrated() ? 'Tracking with your saved profile.' : 'Tracking. Tap Calibrate.');
+    } catch (err) {
+      say('Camera failed: ' + err.message);
+    }
+  });
+
+  $('demoBtn').addEventListener('click', () => {
+    engine.enable_demo($('demo'));
+    setLive(false);
+    say('Demo mode: left zone marches, right zone leans, buttons fire events.');
+  });
+
+  $('calibrate').addEventListener('click', () => {
+    say('Calibrating: step back until shoulders, hips and knees are in frame.');
+    engine.calibrate(presetSel.value).catch(() => {});
+  });
+
+  let recording = false;
+  const recBtn = $('record');
+  recBtn.addEventListener('click', () => {
+    if (!recording) {
+      engine.start_recording({ preset: presetSel.value, userAgent: navigator.userAgent });
+      recording = true;
+      recBtn.textContent = 'Stop and save';
+      recBtn.classList.add('rec');
+      say('Recording up to 30 s.');
+    } else {
+      finishRecording(engine.stop_recording());
+    }
+  });
+  function finishRecording(clip) {
+    recording = false;
+    recBtn.textContent = 'Record 30 s';
+    recBtn.classList.remove('rec');
+    RE.downloadClip(clip);
+    say(`Saved ${clip.meta.frameCount} frames (${(clip.meta.durationMs / 1000).toFixed(1)} s, ${clip.meta.orientation}).`);
+  }
+
+  // Replay a clip, calibrate from its first seconds, and summarize signals so
+  // a portrait and a landscape recording of the same movement can be compared.
+  const summaries = [];
+  $('clipFile').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    let clip;
+    try { clip = RE.validateClip(JSON.parse(await file.text())); } catch (err) { say('Could not read clip: ' + err.message); return; }
+    video.classList.remove('mirror');
+    setLive(false);
+    const acc = { name: file.name, orientation: clip.meta.orientation, frames: 0, lean: [Infinity, -Infinity], squat: 0, kneeL: 0, kneeR: 0 };
+    const off = engine.on('frame', () => {
+      const s = engine.debug().rawSignals;
+      if (!s || s.lean == null) return;
+      acc.frames++;
+      acc.lean = [Math.min(acc.lean[0], s.lean), Math.max(acc.lean[1], s.lean)];
+      acc.squat = Math.max(acc.squat, s.squatDepth);
+      acc.kneeL = Math.max(acc.kneeL, s.kneeLiftL);
+      acc.kneeR = Math.max(acc.kneeR, s.kneeLiftR);
+    });
+    say(`Replaying ${file.name}. Stand still for the first 4 s of a clip so it can calibrate.`);
+    engine.calibrate(presetSel.value).catch(() => {});
+    await engine.start_replay(clip, { realtime: true });
+    off();
+    engine.cancel_calibration();
+    summaries.unshift(acc);
+    summaries.length = Math.min(summaries.length, 2);
+    renderStats();
+    say(acc.frames ? `Replay done: ${acc.frames} calibrated frames.` : 'Replay done, but the clip never calibrated. Start clips standing still.');
+  });
+
+  function renderStats() {
+    const el = $('stats');
+    el.hidden = false;
+    const f = (v) => (isFinite(v) ? v.toFixed(2) : '--');
+    const rows = [
+      ['orientation', (s) => s.orientation || '--'],
+      ['calibrated frames', (s) => s.frames],
+      ['lean min', (s) => f(s.lean[0])],
+      ['lean max', (s) => f(s.lean[1])],
+      ['squat depth max', (s) => f(s.squat)],
+      ['knee lift L max', (s) => f(s.kneeL)],
+      ['knee lift R max', (s) => f(s.kneeR)],
+    ];
+    const head = '<tr><th>Signal</th>' + summaries.map((s) => `<th>${escapeHtml(s.name)}</th>`).join('') + '</tr>';
+    const body = rows.map(([label, get]) => `<tr><td>${label}</td>` + summaries.map((s) => `<td>${get(s)}</td>`).join('') + '</tr>').join('');
+    el.innerHTML = `<table>${head}${body}</table>`;
+  }
+  const escapeHtml = (s) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+  $('clearProfile').addEventListener('click', () => { engine.clear_profile(); say('Profile cleared for this preset and orientation.'); });
+  $('stop').addEventListener('click', () => { engine.stop(); setLive(false); say('Stopped.'); });
+})();
+</script>
+</body>
+</html>
