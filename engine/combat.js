@@ -268,7 +268,11 @@
         for (const s of this.win) if (s.drop > top.drop) top = s;
         if (top.drop - drop >= c.rise) {
           this.driven = true;
-          out.events.push(['drive_up', { depth: top.drop, speed: (top.drop - drop) / Math.max(0.05, (t - top.t) / 1000) }]);
+          // speed over the rise itself: from the last moment still at the bottom
+          // (within 0.03 T of it), not from the start of a held squat
+          let from = top;
+          for (const s of this.win) if (s.t >= top.t && s.drop >= top.drop - 0.03) from = s;
+          out.events.push(['drive_up', { depth: top.drop, speed: (from.drop - drop) / Math.max(0.05, (t - from.t) / 1000) }]);
         }
       }
       if (!this.armed && drop < c.reset) this.armed = true;

@@ -32,7 +32,7 @@
   #stats th:first-child, #stats td:first-child { text-align: left; }
 </style>
 <script>
-/* rep-engine 0.5.0, inlined by build/build.mjs. Edit engine/, not this copy. */
+/* rep-engine 0.5.1, inlined by build/build.mjs. Edit engine/, not this copy. */
 // ---- engine/core.js ----
 // rep-engine core: namespace, landmark indices, small shared helpers.
 // Every engine file is a plain script that adds to globalThis.RepEngine,
@@ -41,7 +41,7 @@
   'use strict';
   const RE = (g.RepEngine = g.RepEngine || {});
 
-  RE.version = '0.5.0';
+  RE.version = '0.5.1';
 
   // MediaPipe Pose landmark indices (33-point model). "Left" and "right"
   // are the player's own anatomical sides.
@@ -314,7 +314,7 @@
         },
         fight: {
           jumpWaitMs: 300,   // after a drive up, how long a jump can still add to the shot
-          refRise: 1.5,      // T/s of drive up speed that is shot power 1
+          refRise: 2.0,      // T/s of drive up speed that is shot power 1 (a 0.4 s rise out of a 0.6 T squat is about 1.8)
           jumpBonus: 0.5,    // shot power a jump off the drive adds
           gnpMs: [2000, 5000], // the ground and pound burst, weakest to strongest takedown
           escapeMs: 3000,    // high knees this long escapes the fight (spec)
@@ -1528,7 +1528,11 @@
         for (const s of this.win) if (s.drop > top.drop) top = s;
         if (top.drop - drop >= c.rise) {
           this.driven = true;
-          out.events.push(['drive_up', { depth: top.drop, speed: (top.drop - drop) / Math.max(0.05, (t - top.t) / 1000) }]);
+          // speed over the rise itself: from the last moment still at the bottom
+          // (within 0.03 T of it), not from the start of a held squat
+          let from = top;
+          for (const s of this.win) if (s.t >= top.t && s.drop >= top.drop - 0.03) from = s;
+          out.events.push(['drive_up', { depth: top.drop, speed: (from.drop - drop) / Math.max(0.05, (t - from.t) / 1000) }]);
         }
       }
       if (!this.armed && drop < c.reset) this.armed = true;

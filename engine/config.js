@@ -171,7 +171,7 @@
         },
         fight: {
           jumpWaitMs: 300,   // after a drive up, how long a jump can still add to the shot
-          refRise: 1.5,      // T/s of drive up speed that is shot power 1
+          refRise: 2.0,      // T/s of drive up speed that is shot power 1 (a 0.4 s rise out of a 0.6 T squat is about 1.8)
           jumpBonus: 0.5,    // shot power a jump off the drive adds
           gnpMs: [2000, 5000], // the ground and pound burst, weakest to strongest takedown
           escapeMs: 3000,    // high knees this long escapes the fight (spec)

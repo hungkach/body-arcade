@@ -277,7 +277,7 @@ test('fight machine: holding a squat sprawls their shot; a drive up is the shot,
   tg.shooting = () => false;
   c.update(500, {});
   // a plain drive: waits for a jump, then resolves on power from the rise speed
-  assert.deepEqual(c.onEvent('drive_up', { speed: 1.5 }, 1000).map((x) => x[0]), ['shot']);
+  assert.deepEqual(c.onEvent('drive_up', { speed: cfg.combat.fight.refRise }, 1000).map((x) => x[0]), ['shot']);
   assert.equal(c.phase, 'drive');
   assert.deepEqual(c.update(1000 + cfg.combat.fight.jumpWaitMs - 10, {}), []);
   const td = c.update(1000 + cfg.combat.fight.jumpWaitMs, {});
@@ -290,7 +290,7 @@ test('fight machine: holding a squat sprawls their shot; a drive up is the shot,
   assert.deepEqual(c.update(1300 + plainMs - 10, {}), []);
   assert.deepEqual(c.update(1300 + plainMs, {}).map((x) => x[0]), ['scramble']);
   // a jump off the drive: resolved at once, more power, a longer burst
-  c.onEvent('drive_up', { speed: 1.5 }, 10000);
+  c.onEvent('drive_up', { speed: cfg.combat.fight.refRise }, 10000);
   const jt = c.onEvent('jump', { height: 0.2 }, 10100);
   assert.equal(jt[0][0], 'takedown');
   assert.equal(jt[0][1].jumped, true);
@@ -298,7 +298,7 @@ test('fight machine: holding a squat sprawls their shot; a drive up is the shot,
   assert.equal(jt[0][1].topMs, cfg.combat.fight.gnpMs[1]);
   c.update(10100 + jt[0][1].topMs, {});
   // the game decides a shot into a waiting opponent: stuffed
-  tg.shot = ({ power }) => ({ takedown: power >= 1.1 });
+  tg.shot = ({ power }) => ({ takedown: power >= 0.9 });
   c.onEvent('drive_up', { speed: 1.0 }, 20000);
   assert.deepEqual(c.update(20000 + cfg.combat.fight.jumpWaitMs, {}).map((x) => x[0]), ['stuffed']);
   assert.equal(c.phase, 'standing');
@@ -315,6 +315,9 @@ test('level: a squat held for seconds still drives up; a hop off the drive is a 
   for (const [name, r] of Object.entries(runAll(script))) {
     const ev = r.events.filter((e) => ['squat', 'drive_up', 'jump'].includes(e.name)).map((e) => e.name);
     assert.deepEqual(ev, ['squat', 'drive_up', 'squat', 'drive_up', 'jump', 'squat'], `${name}`);
+    // the speed is the rise's own, not averaged over the held squat before it
+    const drives = r.events.filter((e) => e.name === 'drive_up').map((e) => e.payload.speed);
+    assert.ok(drives[0] >= 2, `${name}: drive speed ${drives[0]} after a 3 s hold`);
     const held = r.frames.find((f) => f.t >= 8000);
     assert.equal(held.snap.level_low, true, `${name}: not held low`);
     const up = r.frames.find((f) => f.t >= 11500);
