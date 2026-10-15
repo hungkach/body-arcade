@@ -177,9 +177,9 @@
     say(acc.frames ? `Replay done: ${acc.frames} calibrated frames.` : 'Replay done, but the clip never calibrated. Start clips standing still.');
   });
 
-  const COUNTED = ['step', 'run_start', 'run_end', 'turn_left', 'turn_right', 'lean_left', 'lean_right', 'point', 'turn_around', 'wave', 'strike', 'slip', 'stance', 'squat', 'drive_up'];
+  const COUNTED = ['step', 'run_start', 'run_end', 'turn_left', 'turn_right', 'lean_left', 'lean_right', 'point', 'turn_around', 'wave', 'strike', 'slip', 'stance', 'squat', 'drive_up', 'jump'];
   const EVENT_ROWS = ['step', 'run_start', 'run_end', 'turn_left', 'turn_right', 'lean_left', 'lean_right', 'point left', 'point right', 'turn_around', 'wave',
-    'strike jab', 'strike cross', 'strike hook', 'strike uppercut', 'strike down', 'slip left', 'slip right', 'stance orthodox', 'stance southpaw', 'squat', 'drive_up'];
+    'strike jab', 'strike cross', 'strike hook', 'strike uppercut', 'strike down', 'slip left', 'slip right', 'stance orthodox', 'stance southpaw', 'squat', 'drive_up', 'jump'];
 
   function renderStats() {
     const el = $('stats');

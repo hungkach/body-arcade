@@ -32,7 +32,7 @@
   #stats th:first-child, #stats td:first-child { text-align: left; }
 </style>
 <script>
-/* rep-engine 0.4.2, inlined by build/build.mjs. Edit engine/, not this copy. */
+/* rep-engine 0.5.0, inlined by build/build.mjs. Edit engine/, not this copy. */
 // ---- engine/core.js ----
 // rep-engine core: namespace, landmark indices, small shared helpers.
 // Every engine file is a plain script that adds to globalThis.RepEngine,
@@ -41,7 +41,7 @@
   'use strict';
   const RE = (g.RepEngine = g.RepEngine || {});
 
-  RE.version = '0.4.2';
+  RE.version = '0.5.0';
 
   // MediaPipe Pose landmark indices (33-point model). "Left" and "right"
   // are the player's own anatomical sides.
@@ -308,12 +308,15 @@
           reset: 0.15,     // T: re-arms above this (spec)
           speedMs: 400,    // squat speed measured over this long
           rise: 0.2,       // T the level comes back up for a drive up
-          driveMs: 600,    // within this long of the bottom (spec: 0.35 T in 400 ms)
+          driveMs: 400,    // within this long (spec: 0.35 T in 400 ms), however long the squat was held; a slow stand is not a drive
+          holdFrac: 0.8,   // a squat counts as held while the level stays past this share of squat
+          jump: 0.12,      // T above standing that is a jump (hops off the floor)
         },
         fight: {
-          shotMs: 1000,      // drive up within this long of the shot (spec 800)
-          topDepth: 0.2,     // squat depth that holds the top position (spec)
-          scrambleMs: 300,   // standing out of it this long lets them scramble
+          jumpWaitMs: 300,   // after a drive up, how long a jump can still add to the shot
+          refRise: 1.5,      // T/s of drive up speed that is shot power 1
+          jumpBonus: 0.5,    // shot power a jump off the drive adds
+          gnpMs: [2000, 5000], // the ground and pound burst, weakest to strongest takedown
           escapeMs: 3000,    // high knees this long escapes the fight (spec)
         },
       },
@@ -335,7 +338,7 @@
         runHoldMs: 250,
         runCadence: 170,
         cadenceWindowMs: 3000,
-        topHoldMs: 6000,   // after a drive up, the demo holds a half squat this long
+        squatHoldMs: 1500, // the demo squat button holds a squat this long (touch cannot hold a crouch)
       },
       recorder: { maxMs: 30000, decimals: 4 },
       overlay: { eventLogSize: 10 },
@@ -1270,7 +1273,7 @@
   const RE = g.RepEngine;
   const L = RE.LM;
 
-  for (const name of ['strike', 'squat', 'drive_up', 'slip', 'stance']) RE.detectors.add(name);
+  for (const name of ['strike', 'squat', 'drive_up', 'jump', 'slip', 'stance']) RE.detectors.add(name);
 
   const sub = (a, b) => ({ x: a.x - b.x, y: a.y - b.y, z: a.z - b.z });
   const dot = (a, b) => a.x * b.x + a.y * b.y + a.z * b.z;
@@ -1486,35 +1489,51 @@
     }
   }
 
-  // Level changes: 'squat' when the level (sig.levelDrop: the hips, or the
-  // shoulders when the hips are hidden) drops past level.squat (with how fast
-  // it got there), re-armed above level.reset; 'drive_up' when it comes back
-  // up by level.rise within level.driveMs of the bottom of a squat. Knees are
-  // not needed: a squat in knees-up framing pushes them out of the frame.
+  // Level changes, from sig.levelDrop (the hips, or the shoulders when the
+  // hips are hidden; knees are not needed, a squat in knees-up framing pushes
+  // them out of the frame):
+  //   'squat'     the level drops past level.squat (payload: how fast), re-armed
+  //               above level.reset
+  //   'drive_up'  from a squat, the level comes back up by level.rise within
+  //               level.driveMs, however long the squat was held (payload:
+  //               rise speed in T/s); once per squat
+  //   'jump'      the level rises level.jump above standing (a hop off the
+  //               floor), re-armed back near standing
+  // out.levelLow says the squat is being held.
   class LevelDetector {
-    constructor(cfg) { this.c = cfg.combat.level; this.armed = true; this.hist = []; this.bottom = null; }
+    constructor(cfg) { this.c = cfg.combat.level; this.armed = true; this.hist = []; this.win = []; this.lowAt = -Infinity; this.driven = true; this.jumpArmed = true; }
     update(ctx, out) {
       const t = ctx.t;
       const drop = ctx.sig.levelDrop;
+      out.levelLow = false;
       if (drop == null) return;
+      const c = this.c;
       this.hist.push({ t, drop });
-      while (this.hist.length && t - this.hist[0].t > this.c.speedMs) this.hist.shift();
-      if (this.armed && drop >= this.c.squat) {
+      while (this.hist.length && t - this.hist[0].t > c.speedMs) this.hist.shift();
+      this.win.push({ t, drop });
+      while (this.win.length && t - this.win[0].t > c.driveMs) this.win.shift();
+      if (this.armed && drop >= c.squat) {
         this.armed = false;
+        this.driven = false;
         const start = this.hist[0];
         const speed = (drop - start.drop) / Math.max(0.05, (t - start.t) / 1000);
-        this.bottom = { t, drop };
         out.events.push(['squat', { depth: ctx.sig.squatDepth, speed }]);
       }
-      if (this.bottom) {
-        if (drop > this.bottom.drop) this.bottom = { t, drop };
-        if (this.bottom.drop - drop >= this.c.rise) {
-          const ms = t - this.bottom.t;
-          if (ms <= this.c.driveMs) out.events.push(['drive_up', { depth: this.bottom.drop, speed: (this.bottom.drop - drop) / Math.max(0.05, ms / 1000) }]);
-          this.bottom = null;
+      if (drop >= c.squat * c.holdFrac) this.lowAt = t;
+      out.levelLow = !this.armed && drop >= c.squat * c.holdFrac;
+      // the drive: the deepest point in the last driveMs against now, allowed
+      // until driveMs after the level left the squat
+      if (!this.driven && t - this.lowAt <= c.driveMs) {
+        let top = this.win[0];
+        for (const s of this.win) if (s.drop > top.drop) top = s;
+        if (top.drop - drop >= c.rise) {
+          this.driven = true;
+          out.events.push(['drive_up', { depth: top.drop, speed: (top.drop - drop) / Math.max(0.05, (t - top.t) / 1000) }]);
         }
       }
-      if (!this.armed && drop < this.c.reset) { this.armed = true; this.bottom = null; }
+      if (!this.armed && drop < c.reset) this.armed = true;
+      if (this.jumpArmed && drop <= -c.jump) { this.jumpArmed = false; out.events.push(['jump', { height: -drop }]); }
+      else if (!this.jumpArmed && drop > -c.jump * 0.4) this.jumpArmed = true;
     }
   }
 
@@ -1536,28 +1555,58 @@
   // run after the locomotion detectors (stance reads the turn detector's yaw)
   RE.makeCombatDetectors = (cfg) => [new ArmPose(), new GuardDetector(cfg), new StanceDetector(cfg), new StrikeDetector(cfg), new SlipDetector(cfg), new LevelDetector(cfg)];
 
-  // Fight state machine (spec update_combat). Runs only in combat mode.
-  // target: {bearing(), shooting(), open()} from enter_combat; all optional.
-  //   standing  squat while the target shoots: 'sprawl'; squat otherwise
-  //             (when the target is open): 'shot'
-  //   shot      drive_up within shotMs: 'takedown' and top; too slow: 'stuffed'
-  //   top       strikes become 'down_strike'; rise out of the crouch for
-  //             scrambleMs: 'scramble' and back to standing
+  // Fight state machine (spec update_combat; reworked in 0.5.0 after Mark's
+  // camera test). Runs only in combat mode. target, from enter_combat, all
+  // optional: {bearing(), open(), shooting(), shot({power, speed, jumped})}.
+  //   standing  holding a squat (or squatting) while the target shoots:
+  //             'sprawl', once per shot. A drive up out of a squat while the
+  //             target is open: 'shot' and the drive phase
+  //   drive     waits up to fight.jumpWaitMs for a 'jump' off the drive, then
+  //             resolves the shot. power = rise speed / fight.refRise (clamped)
+  //             plus fight.jumpBonus for a jump. target.shot(...) decides:
+  //             {takedown: false} is 'stuffed'; {takedown: true, topMs} (or no
+  //             shot callback) is 'takedown' and top for topMs, by default
+  //             fight.gnpMs scaled by power
+  //   top       a timed ground and pound burst: strikes become 'down_strike';
+  //             when the time is up, 'scramble' and back to standing
   // Anywhere: running (high knees) for escapeMs: 'escape' (the engine then
   // leaves combat mode).
   class Combat {
     constructor(cfg) { this.c = cfg.combat.fight; this.reset(); }
-    reset() { this.phase = 'standing'; this.shotAt = null; this.highSince = null; this.runSince = null; this.target = null; }
+    reset() { this.phase = 'standing'; this.drive = null; this.topUntil = 0; this.runSince = null; this.target = null; this.sprawled = false; }
     enter(target) { this.reset(); this.target = target || null; }
+    gnpMs(power) {
+      const [lo, hi] = this.c.gnpMs;
+      return Math.round(lo + (hi - lo) * RE.clamp((power - 0.5) / 1.0, 0, 1));
+    }
+    resolve(t) {
+      const d = this.drive;
+      this.drive = null;
+      const power = RE.clamp(d.speed / this.c.refRise, 0.3, 1.2) + (d.jumped ? this.c.jumpBonus : 0);
+      const info = { power, speed: d.speed, jumped: d.jumped };
+      const tg = this.target || {};
+      const r = (tg.shot && tg.shot(info)) || { takedown: true };
+      if (!r.takedown) { this.phase = 'standing'; return [['stuffed', info]]; }
+      const topMs = r.topMs || this.gnpMs(power);
+      this.phase = 'top';
+      this.topUntil = t + topMs;
+      return [['takedown', Object.assign(info, { topMs })]];
+    }
     // returns events to emit: [[name, payload]]
     onEvent(name, payload, t) {
       const out = [];
       const tg = this.target || {};
       if (name === 'squat' && this.phase === 'standing') {
-        if (tg.shooting && tg.shooting()) out.push(['sprawl', payload]);
-        else if (!tg.open || tg.open()) { this.phase = 'shot'; this.shotAt = t; out.push(['shot', payload]); }
-      } else if (name === 'drive_up' && this.phase === 'shot') {
-        if (t - this.shotAt <= this.c.shotMs) { this.phase = 'top'; this.highSince = null; out.push(['takedown', payload]); }
+        if (tg.shooting && tg.shooting() && !this.sprawled) { this.sprawled = true; out.push(['sprawl', payload]); }
+      } else if (name === 'drive_up' && this.phase === 'standing') {
+        if (!(tg.shooting && tg.shooting()) && (!tg.open || tg.open())) {
+          this.phase = 'drive';
+          this.drive = { t, speed: payload.speed || 0, jumped: false };
+          out.push(['shot', { speed: payload.speed || 0 }]);
+        }
+      } else if (name === 'jump' && this.phase === 'drive') {
+        this.drive.jumped = true;
+        out.push(...this.resolve(t));
       } else if (name === 'strike' && this.phase === 'top') {
         out.push(['down_strike', { hand: payload.hand, power: payload.power }]);
       } else if (name === 'run_start') {
@@ -1567,20 +1616,20 @@
       }
       return out;
     }
+    // sig: the engine snapshot (level_low: a squat being held)
     update(t, sig) {
+      this.lastT = t;
       const out = [];
-      if (this.phase === 'shot' && t - this.shotAt > this.c.shotMs) { this.phase = 'standing'; out.push(['stuffed', {}]); }
-      if (this.phase === 'top') {
-        // the top position is a half squat hold: stand up and they scramble free
-        if ((sig.squat_depth || 0) < this.c.topDepth) {
-          if (this.highSince === null) this.highSince = t;
-          if (t - this.highSince >= this.c.scrambleMs) { this.phase = 'standing'; out.push(['scramble', {}]); }
-        } else this.highSince = null;
-      }
+      const tg = this.target || {};
+      const shooting = !!(tg.shooting && tg.shooting());
+      if (!shooting) this.sprawled = false;
+      else if (this.phase === 'standing' && sig.level_low && !this.sprawled) { this.sprawled = true; out.push(['sprawl', { held: true }]); }
+      if (this.phase === 'drive' && t - this.drive.t >= this.c.jumpWaitMs) out.push(...this.resolve(t));
+      if (this.phase === 'top' && t >= this.topUntil) { this.phase = 'standing'; out.push(['scramble', {}]); }
       if (this.runSince !== null && t - this.runSince >= this.c.escapeMs) { this.runSince = null; out.push(['escape', {}]); }
       return out;
     }
-    snapshot() { return { phase: this.phase }; }
+    snapshot() { return { phase: this.phase, top_ms_left: this.phase === 'top' ? Math.max(0, this.topUntil - (this.lastT || 0)) : 0 }; }
   }
   RE.Combat = Combat;
   RE.GuardDetector = GuardDetector;
@@ -2155,7 +2204,8 @@
 //                    Double-tap and hold = run.
 //   Right thumb zone: drag sideways = turn.
 //   Buttons: point L/R, turn around, jab, cross, hook, uppercut, guard
-//            (hold), slip L/R, stance (orthodox / southpaw), squat, drive up,
+//            (hold), slip L/R, stance (orthodox / southpaw), squat (held
+//            1.5 s), drive up, jump (an explosive drive up off the floor),
 //            stomp. Jab and hook throw the lead hand, cross and uppercut the rear.
 (function (g) {
   'use strict';
@@ -2171,7 +2221,6 @@
       this.turn = 0;
       this.guard = false;
       this.squatUntil = 0;
-      this.topUntil = 0; // after a drive up: the half squat hold of the top position
       this.running = false;
       this.runTimer = 0;
       this.lastTapAt = -Infinity;
@@ -2250,10 +2299,12 @@
           this.stance = this.stance === 'orthodox' ? 'southpaw' : 'orthodox';
           this.emit('stance', { stance: this.stance });
           break;
-        case 'squat': this.squatUntil = now + 600; this.topUntil = 0; this.emit('squat', { depth: 1, speed: 1 }); break;
-        // a drive up lands you on top in a half squat, held a few seconds (a
-        // touch screen cannot hold a crouch), long enough for the down strikes
-        case 'drive_up': this.squatUntil = 0; this.topUntil = now + this.cfg.topHoldMs; this.emit('drive_up', { depth: 1, speed: 1 }); break;
+        // a squat is held a moment (a touch screen cannot hold a crouch): long
+        // enough to sprawl on a shot or to drive out of
+        case 'squat': this.squatUntil = now + this.cfg.squatHoldMs; this.emit('squat', { depth: 1, speed: 1 }); break;
+        case 'drive_up': this.squatUntil = 0; this.emit('drive_up', { depth: 1, speed: 1.5 }); break;
+        // a jump: an explosive drive up that leaves the floor (the strongest shot)
+        case 'jump': this.squatUntil = 0; this.emit('drive_up', { depth: 1, speed: 2 }); this.emit('jump', { height: 0.2 }); break;
         case 'stomp': this.emit('stomp', { leg: this.leg, power: 1 }); this.leg = this.leg === 'left' ? 'right' : 'left'; break;
         default: break;
       }
@@ -2266,7 +2317,8 @@
         speed: 0, // the engine fills this in from the locomotion state machine
         turn: this.turn,
         lean: 0,
-        squat_depth: now < this.squatUntil ? 1 : now < this.topUntil ? 0.5 : 0,
+        squat_depth: now < this.squatUntil ? 1 : 0,
+        level_low: now < this.squatUntil,
         guard_up: this.guard,
         stance: this.stance,
         slip: now < this.slipUntil ? this.slip : 0,
@@ -2281,7 +2333,7 @@
     ['point_left', 'Point L'], ['point_right', 'Point R'], ['turn_around', 'Turn 180'],
     ['jab', 'Jab'], ['cross', 'Cross'], ['hook', 'Hook'], ['uppercut', 'Upper'],
     ['guard', 'Guard'], ['slip_left', 'Slip L'], ['slip_right', 'Slip R'], ['stance', 'Stance'],
-    ['squat', 'Squat'], ['drive_up', 'Drive up'], ['stomp', 'Stomp'],
+    ['squat', 'Squat'], ['drive_up', 'Drive up'], ['jump', 'Jump'], ['stomp', 'Stomp'],
   ];
   RE.DEMO_BUTTONS = Object.freeze(BUTTONS.map(([action]) => action));
 
@@ -2724,6 +2776,7 @@
           guard_up: det ? det.guard : false,
           stance: det ? det.stance : 'square',
           slip: det ? det.slip : 0,
+          level_low: det ? !!det.levelLow : false,
           confidence: sig.confidence,
         });
         combatTick(raw.t);
@@ -3028,7 +3081,7 @@
   };
 
   function emptySnapshot() {
-    return { cadence_spm: 0, effort: 0, speed: 0, turn: 0, lean: 0, squat_depth: 0, guard_up: false, stance: 'square', slip: 0, confidence: 0 };
+    return { cadence_spm: 0, effort: 0, speed: 0, turn: 0, lean: 0, squat_depth: 0, guard_up: false, stance: 'square', slip: 0, level_low: false, confidence: 0 };
   }
 })(globalThis);
 </script>
@@ -3177,9 +3230,9 @@
     say(acc.frames ? `Replay done: ${acc.frames} calibrated frames.` : 'Replay done, but the clip never calibrated. Start clips standing still.');
   });
 
-  const COUNTED = ['step', 'run_start', 'run_end', 'turn_left', 'turn_right', 'lean_left', 'lean_right', 'point', 'turn_around', 'wave', 'strike', 'slip', 'stance', 'squat', 'drive_up'];
+  const COUNTED = ['step', 'run_start', 'run_end', 'turn_left', 'turn_right', 'lean_left', 'lean_right', 'point', 'turn_around', 'wave', 'strike', 'slip', 'stance', 'squat', 'drive_up', 'jump'];
   const EVENT_ROWS = ['step', 'run_start', 'run_end', 'turn_left', 'turn_right', 'lean_left', 'lean_right', 'point left', 'point right', 'turn_around', 'wave',
-    'strike jab', 'strike cross', 'strike hook', 'strike uppercut', 'strike down', 'slip left', 'slip right', 'stance orthodox', 'stance southpaw', 'squat', 'drive_up'];
+    'strike jab', 'strike cross', 'strike hook', 'strike uppercut', 'strike down', 'slip left', 'slip right', 'stance orthodox', 'stance southpaw', 'squat', 'drive_up', 'jump'];
 
   function renderStats() {
     const el = $('stats');

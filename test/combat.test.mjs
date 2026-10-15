@@ -169,6 +169,25 @@ test('arm pose: guard fists by the face, a jab reaches the camera', () => {
 
 // A scripted sparring dummy (spec done-when): takes hits, can be taken down,
 // finished on the ground. open() lets a shot in; shooting() is its own takedown.
+// A level change and a drive out of it: the level drops by depth (m) over
+// downS, holds holdS, then drives back up over upS, rising jump (m) above
+// standing (a hop) before settling back.
+function levelShot(start, { depth = 0.3, downS = 0.35, holdS = 1, upS = 0.25, jump = 0 } = {}) {
+  const e = (x) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
+  const upAt = start + downS + holdS;
+  return {
+    start, end: upAt + upS + 0.5, kind: 'level', expected: {},
+    apply(t, m) {
+      let d;
+      if (t < start + downS) d = depth * e((t - start) / downS);
+      else if (t < upAt) d = depth;
+      else if (t < upAt + upS) d = depth - (depth + jump) * e((t - upAt) / upS);
+      else d = -jump * (1 - e((t - upAt - upS) / 0.3));
+      m.drop = (m.drop || 0) + d;
+    },
+  };
+}
+
 function dummy() {
   return {
     hp: 6, down: false, shoots: false, bearing: () => 90, open: () => true, shooting() { return this.shoots; },
@@ -192,16 +211,10 @@ function wire(engine, d) {
 test('done-when, camera: the dummy is struck, taken down, and finished', () => {
   const segs = [moves.stance(5, 11, 'orthodox')];
   for (const [i, [hand, type]] of [['left', 'straight'], ['right', 'straight'], ['left', 'hook']].entries()) segs.push(moves.punch(6.5 + i * 1.2, hand, type));
-  // shoot the double leg (hips drop 0.3 m), drive through (back up to 0.15 m
-  // fast) and stay low on top, a half squat hold, for the down strikes
-  segs.push({
-    start: 11.5, end: 19, kind: 'level', expected: {},
-    apply(t, m) {
-      const u = t - 11.5, e = (x) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
-      m.drop = (m.drop || 0) + (u < 0.3 ? 0.3 * e(u / 0.3) : u < 0.45 ? 0.3 : u < 0.7 ? 0.3 - 0.15 * e((u - 0.45) / 0.25) : u < 7 ? 0.15 : 0.15 * (1 - e((u - 7) / 0.5)));
-    },
-  });
-  segs.push(moves.guard(12.5, 20), moves.punch(14, 'left', 'down'), moves.punch(15.2, 'right', 'down'), moves.punch(16.4, 'left', 'down'));
+  // level change (hips drop 0.3 m and hold), then drive up into a jump: the
+  // strongest shot, a 5 s ground and pound burst for the down strikes
+  segs.push(levelShot(11.5, { holdS: 1.5, jump: 0.08 }));
+  segs.push(moves.guard(13.6, 20), moves.punch(14.2, 'left', 'down'), moves.punch(15.2, 'right', 'down'), moves.punch(16.2, 'left', 'down'));
   const script = scriptMotion(segs);
   for (const name of ['portrait', 'landscape', 'livingRoom']) {
     const d = dummy();
@@ -232,11 +245,11 @@ test('done-when, demo: the dummy is struck, taken down, and finished', () => {
   for (const b of ['jab', 'cross', 'hook', 'uppercut']) demo.press(b, RE.now());
   demo.press('squat', RE.now());
   e.signals();
-  demo.press('drive_up', RE.now());
+  assert.equal(e.signals().level_low, true);
+  // a jump resolves the shot at once (a plain drive up waits jumpWaitMs for one)
+  demo.press('jump', RE.now());
   assert.equal(e.combat().phase, 'top');
-  // the demo holds the half squat of the top position: no scramble while striking down
   e.signals();
-  assert.equal(e.signals().squat_depth, 0.5);
   for (let i = 0; i < 3; i++) { demo.press('jab', RE.now()); e.signals(); }
   assert.equal(e.combat().phase, 'top');
   assert.ok(d.down && d.hp <= 0, `hp ${d.hp}, log ${log}`);
@@ -244,24 +257,69 @@ test('done-when, demo: the dummy is struck, taken down, and finished', () => {
   e.disable_demo();
 });
 
-test('fight machine: slow drive is stuffed, a squat while they shoot is a sprawl, standing up scrambles', () => {
-  const c = new RE.Combat(RE.defaultConfig());
+test('fight machine: holding a squat sprawls their shot; a drive up is the shot, a jump makes it stronger', () => {
+  const cfg = RE.defaultConfig();
+  const c = new RE.Combat(cfg);
   const tg = { shooting: () => false, open: () => true };
   c.enter(tg);
-  assert.deepEqual(c.onEvent('squat', {}, 0).map((x) => x[0]), ['shot']);
-  assert.deepEqual(c.update(1100, {}).map((x) => x[0]), ['stuffed']);
-  assert.equal(c.phase, 'standing');
+  // a held squat when they shoot: one sprawl per shot, no new squat needed
+  assert.deepEqual(c.update(0, { level_low: true }), []);
   tg.shooting = () => true;
-  assert.deepEqual(c.onEvent('squat', {}, 1200).map((x) => x[0]), ['sprawl']);
+  assert.deepEqual(c.update(100, { level_low: true }).map((x) => x[0]), ['sprawl']);
+  assert.deepEqual(c.update(200, { level_low: true }), []);
   tg.shooting = () => false;
-  c.onEvent('squat', {}, 2000);
-  assert.deepEqual(c.onEvent('drive_up', {}, 2500).map((x) => x[0]), ['takedown']);
-  assert.deepEqual(c.update(2600, { squat_depth: 0.5 }), []);
-  c.update(2700, { squat_depth: 0.05 });
-  assert.deepEqual(c.update(3050, { squat_depth: 0.05 }).map((x) => x[0]), ['scramble']);
-  // a closed guard: the shot never starts
+  c.update(300, {});
+  // a squat as they shoot also sprawls
+  tg.shooting = () => true;
+  assert.deepEqual(c.onEvent('squat', {}, 400).map((x) => x[0]), ['sprawl']);
+  // driving up while they shoot is not a shot
+  assert.deepEqual(c.onEvent('drive_up', { speed: 3 }, 450), []);
+  tg.shooting = () => false;
+  c.update(500, {});
+  // a plain drive: waits for a jump, then resolves on power from the rise speed
+  assert.deepEqual(c.onEvent('drive_up', { speed: 1.5 }, 1000).map((x) => x[0]), ['shot']);
+  assert.equal(c.phase, 'drive');
+  assert.deepEqual(c.update(1000 + cfg.combat.fight.jumpWaitMs - 10, {}), []);
+  const td = c.update(1000 + cfg.combat.fight.jumpWaitMs, {});
+  assert.equal(td[0][0], 'takedown');
+  assert.equal(td[0][1].jumped, false);
+  assert.ok(Math.abs(td[0][1].power - 1) < 1e-9);
+  const plainMs = td[0][1].topMs;
+  // top is a timed burst: strikes are down strikes, then they scramble up
+  assert.deepEqual(c.onEvent('strike', { hand: 'left', power: 1 }, 1500).map((x) => x[0]), ['down_strike']);
+  assert.deepEqual(c.update(1300 + plainMs - 10, {}), []);
+  assert.deepEqual(c.update(1300 + plainMs, {}).map((x) => x[0]), ['scramble']);
+  // a jump off the drive: resolved at once, more power, a longer burst
+  c.onEvent('drive_up', { speed: 1.5 }, 10000);
+  const jt = c.onEvent('jump', { height: 0.2 }, 10100);
+  assert.equal(jt[0][0], 'takedown');
+  assert.equal(jt[0][1].jumped, true);
+  assert.ok(jt[0][1].topMs > plainMs, `jump ${jt[0][1].topMs} vs ${plainMs}`);
+  assert.equal(jt[0][1].topMs, cfg.combat.fight.gnpMs[1]);
+  c.update(10100 + jt[0][1].topMs, {});
+  // the game decides a shot into a waiting opponent: stuffed
+  tg.shot = ({ power }) => ({ takedown: power >= 1.1 });
+  c.onEvent('drive_up', { speed: 1.0 }, 20000);
+  assert.deepEqual(c.update(20000 + cfg.combat.fight.jumpWaitMs, {}).map((x) => x[0]), ['stuffed']);
+  assert.equal(c.phase, 'standing');
+  c.onEvent('drive_up', { speed: 1.0 }, 21000);
+  assert.deepEqual(c.onEvent('jump', {}, 21100).map((x) => x[0]), ['takedown']);
+  c.update(30000, {});
+  // not open (out of range): no shot
   tg.open = () => false;
-  assert.deepEqual(c.onEvent('squat', {}, 4000), []);
+  assert.deepEqual(c.onEvent('drive_up', { speed: 3 }, 40000), []);
+});
+
+test('level: a squat held for seconds still drives up; a hop off the drive is a jump', () => {
+  const script = scriptMotion([levelShot(6, { holdS: 3 }), levelShot(13, { holdS: 0.5, jump: 0.08 }), moves.squat(18, 0.3, 0.6, 0.6, 2.5)]);
+  for (const [name, r] of Object.entries(runAll(script))) {
+    const ev = r.events.filter((e) => ['squat', 'drive_up', 'jump'].includes(e.name)).map((e) => e.name);
+    assert.deepEqual(ev, ['squat', 'drive_up', 'squat', 'drive_up', 'jump', 'squat'], `${name}`);
+    const held = r.frames.find((f) => f.t >= 8000);
+    assert.equal(held.snap.level_low, true, `${name}: not held low`);
+    const up = r.frames.find((f) => f.t >= 11500);
+    assert.equal(up.snap.level_low, false, `${name}: still low`);
+  }
 });
 
 test('fight machine: three seconds of high knees escapes and leaves combat mode', () => {
