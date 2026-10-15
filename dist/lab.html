@@ -41,7 +41,7 @@
   'use strict';
   const RE = (g.RepEngine = g.RepEngine || {});
 
-  RE.version = '0.4.1';
+  RE.version = '0.4.2';
 
   // MediaPipe Pose landmark indices (33-point model). "Left" and "right"
   // are the player's own anatomical sides.
@@ -279,8 +279,8 @@
           rearm: 130,        // degrees: after a straight the elbow must bend below this again
           straightOn: 150,   // degrees: straight punch ends with the elbow this straight
           bentMax: 115,      // degrees: having been this bent inside the window
-          reach: 0.55,       // fist in front of its shoulder by this share of arm length
-          fwdGain: 0.18,     // m the fist travelled toward the camera inside the window
+          reach: 0.5,        // fist in front of its shoulder by this share of arm length
+          fwdGain: 0.15,     // m the fist travelled toward the camera inside the window
           bentMax2: 135,     // degrees: hooks and uppercuts keep the elbow bent
           hookHeight: 0.3,   // m from shoulder height
           hookFront: 0.1,    // m in front of the shoulder
@@ -304,14 +304,14 @@
           eventReset: 0.2,
         },
         level: {
-          squat: 0.35,     // T hip drop that is a squat (spec)
+          squat: 0.3,      // T level drop that is a squat (spec 0.35; 0.4.2 eased for a fighting crouch)
           reset: 0.15,     // T: re-arms above this (spec)
           speedMs: 400,    // squat speed measured over this long
-          rise: 0.25,      // T the hips come back up for a drive up
-          driveMs: 400,    // within this long of the bottom (spec: 0.35 T in 400 ms)
+          rise: 0.2,       // T the level comes back up for a drive up
+          driveMs: 600,    // within this long of the bottom (spec: 0.35 T in 400 ms)
         },
         fight: {
-          shotMs: 800,       // drive up within this long of the shot (spec)
+          shotMs: 1000,      // drive up within this long of the shot (spec 800)
           topDepth: 0.2,     // squat depth that holds the top position (spec)
           scrambleMs: 300,   // standing out of it this long lets them scramble
           escapeMs: 3000,    // high knees this long escapes the fight (spec)
@@ -609,7 +609,16 @@
     out.lean = sMid.x - hMid.x;
     // hip drop below the calibrated standing hip height, in T
     out.hipDrop = -hMid.y;
-    out.squatDepth = RE.clamp(out.hipDrop / cfg.signals.squatFullDrop, 0, 1);
+    // level: the hip drop when both hips are seen, else the shoulder drop below
+    // standing shoulder height. In knees-up framing a squat or a fighting stance
+    // often hides the knees and sometimes the hips, and the level change must
+    // still read; null when neither pair is seen this frame
+    const seen = (i) => !!points[i] && points[i].v >= cfg.visibility.hold;
+    out.upperSeen = seen(L.L_SHOULDER) && seen(L.R_SHOULDER);
+    out.hipsSeen = seen(L.L_HIP) && seen(L.R_HIP);
+    out.shoulderDrop = (cal.shoulderBaseY != null ? cal.shoulderBaseY : 1) - sMid.y;
+    out.levelDrop = out.hipsSeen ? out.hipDrop : out.upperSeen ? out.shoulderDrop : null;
+    out.squatDepth = RE.clamp((out.levelDrop != null ? out.levelDrop : out.hipDrop) / cfg.signals.squatFullDrop, 0, 1);
     // knee lift above standing knee height, in T
     out.kneeLiftL = lk.y - cal.kneeBaseL;
     out.kneeLiftR = rk.y - cal.kneeBaseR;
@@ -1319,8 +1328,8 @@
       const dist = (w) => Math.hypot(w.x - b.nose.x, (w.y - b.nose.y) * ratio);
       const near = (w, lim) => dist(w) <= lim && w.y >= b.sMid.y - this.c.below;
       const ok = (i) => { const p = ctx.points[i]; return p && !p.held && p.v >= ctx.holdVis; };
-      const nl = !ctx.low && ok(L.L_WRIST) && near(b.lw, this.c.near);
-      const nr = !ctx.low && ok(L.R_WRIST) && near(b.rw, this.c.near);
+      const nl = !ctx.upperLow && ok(L.L_WRIST) && near(b.lw, this.c.near);
+      const nr = !ctx.upperLow && ok(L.R_WRIST) && near(b.rw, this.c.near);
       if (nl) this.lastNear.left = t;
       if (nr) this.lastNear.right = t;
       out.handNearAt = { left: this.lastNear.left, right: this.lastNear.right };
@@ -1334,7 +1343,7 @@
         // a hand out on a punch keeps the guard: only both hands down, or one away too long, drop it
         const l = keep(b.lw, L.L_WRIST) || t - this.lastNear.left < this.c.punchMs;
         const r = keep(b.rw, L.R_WRIST) || t - this.lastNear.right < this.c.punchMs;
-        if (ctx.low || !(l && r)) { this.up = false; this.since = null; }
+        if (ctx.upperLow || !(l && r)) { this.up = false; this.since = null; }
       }
       out.guard = this.up;
     }
@@ -1393,7 +1402,7 @@
         while (h.hist.length && t - h.hist[0].t > this.c.windowMs) h.hist.shift();
         if (a.angle < this.c.rearm) h.armed = true;
         if (h.hist.length < 3 || t - h.last < this.c.refractoryMs) continue;
-        if (ctx.low) continue;
+        if (ctx.upperLow) continue;
         const type = this.classify(ctx, hand, a, h.hist, out);
         if (!type) continue;
         h.last = t;
@@ -1429,7 +1438,7 @@
       const dt = (now.t - v0.t) / 1000 || 1;
       const vx = (now.tx - v0.tx) / dt, vy = (now.y - v0.y) / dt;
       const vArc = Math.hypot(now.tx - v0.tx, now.tz - v0.tz) / dt; // a hook travels an arc in the horizontal plane
-      const lowStance = ctx.sig.hipDrop >= c.downDrop;
+      const lowStance = (ctx.sig.levelDrop != null ? ctx.sig.levelDrop : ctx.sig.hipDrop) >= c.downDrop;
 
       if (a.angle >= c.straightOn && minAngle <= c.bentMax && this.hands[hand].armed) {
         const fwdGain = now.z - Math.min(...hist.map((s) => s.z));
@@ -1463,7 +1472,7 @@
     update(ctx, out) {
       const b = ctx.sig.body;
       let slip = 0;
-      if (!ctx.low) {
+      if (!ctx.upperLow) {
         const off = b.nose.x - b.hMid.x;
         const k = (Math.abs(off) - this.c.deadzone) / (this.c.full - this.c.deadzone);
         if (k > 0) slip = Math.sign(off) * Math.min(k, 1);
@@ -1477,15 +1486,17 @@
     }
   }
 
-  // Level changes: 'squat' when the hips drop past squat.drop (with how fast
-  // they got there), re-armed above squat.reset; 'drive_up' when the hips
-  // come back up by drive.rise within drive.ms of the bottom of a squat.
+  // Level changes: 'squat' when the level (sig.levelDrop: the hips, or the
+  // shoulders when the hips are hidden) drops past level.squat (with how fast
+  // it got there), re-armed above level.reset; 'drive_up' when it comes back
+  // up by level.rise within level.driveMs of the bottom of a squat. Knees are
+  // not needed: a squat in knees-up framing pushes them out of the frame.
   class LevelDetector {
     constructor(cfg) { this.c = cfg.combat.level; this.armed = true; this.hist = []; this.bottom = null; }
     update(ctx, out) {
       const t = ctx.t;
-      const drop = ctx.sig.hipDrop;
-      if (drop == null || ctx.low) return;
+      const drop = ctx.sig.levelDrop;
+      if (drop == null) return;
       this.hist.push({ t, drop });
       while (this.hist.length && t - this.hist[0].t > this.c.speedMs) this.hist.shift();
       if (this.armed && drop >= this.c.squat) {
@@ -1741,6 +1752,9 @@
         side: m('sideSign') >= 0 ? 1 : -1,
         createdAt: new Date().toISOString(),
       };
+      // standing shoulder height in body units (about 1), for the level change
+      // when the hips are hidden
+      cal.shoulderBaseY = median(this.samples.map((s) => (cal.hipMidY - s.shoulderMidY) / cal.torsoLength));
       // Knee baselines in body units, relative to the calibrated hip.
       cal.kneeBaseL = median(this.samples.map((s) => (cal.hipMidY - s.kneeLY) / cal.torsoLength));
       cal.kneeBaseR = median(this.samples.map((s) => (cal.hipMidY - s.kneeRY) / cal.torsoLength));
@@ -1788,6 +1802,7 @@
       torsoLength: RE.dist(sMid, hMid),
       hipMidX: hMid.x,
       hipMidY: hMid.y,
+      shoulderMidY: sMid.y,
       sideSign: Math.sign(p[L.R_SHOULDER].x - p[L.L_SHOULDER].x),
       kneeLY: p[L.L_KNEE].y,
       kneeRY: p[L.R_KNEE].y,
@@ -2693,7 +2708,7 @@
       if (st.source !== 'demo') {
         // gesture detectors, then the state machine reads their events
         st.det = st.cal && points
-          ? st.detectors.update({ t: raw.t, w: raw.w, h: raw.h, points, raw: px, world, cal: st.cal, sig, low, holdVis: cfg.visibility.hold })
+          ? st.detectors.update({ t: raw.t, w: raw.w, h: raw.h, points, raw: px, world, cal: st.cal, sig, low, upperLow: !sig.upperSeen, holdVis: cfg.visibility.hold })
           : null;
         if (st.det && st.capture.move === 'step' && st.det.stepCues) recordCues(st.det.stepCues);
         if (st.det) for (const [name, payload] of st.det.events) emitter.emit(name, payload);
@@ -2705,7 +2720,7 @@
           speed: st.loco.speed,
           turn: det ? det.turn : 0,
           lean: det ? det.lean : 0,
-          squat_depth: sig.squatDepth != null && !low ? sig.squatDepth : 0,
+          squat_depth: sig.squatDepth != null && sig.levelDrop != null ? sig.squatDepth : 0,
           guard_up: det ? det.guard : false,
           stance: det ? det.stance : 'square',
           slip: det ? det.slip : 0,

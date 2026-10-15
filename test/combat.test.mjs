@@ -105,11 +105,40 @@ test('slip: head off the center line, each way, once', () => {
 });
 
 test('squat and drive up: a slow squat is a squat, an explosive one also drives up', () => {
-  const script = scriptMotion([moves.squat(6, 0.3, 0.6, 0.6, 1.0), moves.shot(10)]);
+  const script = scriptMotion([moves.squat(6, 0.3, 0.6, 0.6, 2.0), moves.shot(10)]);
   for (const [name, r] of Object.entries(runAll(script))) {
     const ev = r.events.filter((e) => e.name === 'squat' || e.name === 'drive_up').map((e) => e.name);
     assert.deepEqual(ev, ['squat', 'squat', 'drive_up'], `${name}`);
     assert.equal(r.count('step'), 0, `${name}: a squat stepped`);
+  }
+});
+
+// Knees-up framing: a fighting crouch or a squat pushes the knees out of the
+// frame (MediaPipe drops their visibility) and arms in front can hide the
+// hips. Neither may switch off the fight detectors (0.4.2: the first real
+// phone fight registered no punches and no level changes).
+const hide = (from, idx) => (f) => { if (f.t >= from) for (const i of idx) f.lm[i][3] = f.wl[i][3] = 0.1; };
+test('knees hidden after calibration: punches, guard and level changes still register', () => {
+  const { script, thrown } = combo('orthodox');
+  const want = thrown.map(([hand, type]) => label('orthodox', hand, type));
+  for (const [name, r] of Object.entries(runAll(script, { onFrame: hide(5500, [25, 26]) }))) {
+    assert.deepEqual(strikes(r), want, `${name}`);
+    assert.ok(r.frames.some((f) => f.snap.guard_up), `${name}: no guard`);
+  }
+  const shots = scriptMotion([moves.squat(6, 0.3, 0.6, 0.6, 2.0), moves.shot(10)]);
+  for (const [name, r] of Object.entries(runAll(shots, { onFrame: hide(5500, [25, 26]) }))) {
+    const ev = r.events.filter((e) => e.name === 'squat' || e.name === 'drive_up').map((e) => e.name);
+    assert.deepEqual(ev, ['squat', 'squat', 'drive_up'], `${name}`);
+  }
+});
+
+test('hips and knees hidden: the shoulders carry the level change and squat depth', () => {
+  const script = scriptMotion([moves.shot(7), moves.crouch(10, 14, 0.25)]);
+  for (const [name, r] of Object.entries(runAll(script, { onFrame: hide(5500, [23, 24, 25, 26]) }))) {
+    const ev = r.events.filter((e) => e.name === 'squat' || e.name === 'drive_up').map((e) => e.name);
+    assert.deepEqual(ev.slice(0, 2), ['squat', 'drive_up'], `${name}: ${ev}`);
+    const mid = r.frames.find((f) => f.t >= 12000);
+    assert.ok(mid.snap.squat_depth >= 0.4, `${name}: crouch depth ${mid.snap.squat_depth}`);
   }
 });
 
@@ -220,10 +249,10 @@ test('fight machine: slow drive is stuffed, a squat while they shoot is a sprawl
   const tg = { shooting: () => false, open: () => true };
   c.enter(tg);
   assert.deepEqual(c.onEvent('squat', {}, 0).map((x) => x[0]), ['shot']);
-  assert.deepEqual(c.update(900, {}).map((x) => x[0]), ['stuffed']);
+  assert.deepEqual(c.update(1100, {}).map((x) => x[0]), ['stuffed']);
   assert.equal(c.phase, 'standing');
   tg.shooting = () => true;
-  assert.deepEqual(c.onEvent('squat', {}, 1000).map((x) => x[0]), ['sprawl']);
+  assert.deepEqual(c.onEvent('squat', {}, 1200).map((x) => x[0]), ['sprawl']);
   tg.shooting = () => false;
   c.onEvent('squat', {}, 2000);
   assert.deepEqual(c.onEvent('drive_up', {}, 2500).map((x) => x[0]), ['takedown']);
