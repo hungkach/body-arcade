@@ -242,4 +242,13 @@ test('games choose which demo buttons show', () => {
   assert.deepEqual(RE.demoButtons({ buttons: ['stomp', 'jab', 'hook'] }).map((b) => b[0]), ['jab', 'hook', 'stomp']);
   assert.deepEqual(RE.demoButtons({ buttons: [] }), []);
   assert.throws(() => RE.demoButtons({ buttons: ['jab', 'kick'] }), /unknown demo button kick/);
+  // waves (0.5.3): the same 'wave' event as the camera, with the hand
+  const e = RE.create({ headless: true });
+  e.enable_demo();
+  const got = [];
+  e.on('wave', (p) => got.push(p.hand));
+  e.debug().demo.press('wave_right', RE.now());
+  e.debug().demo.press('wave_left', RE.now());
+  assert.deepEqual(got, ['right', 'left']);
+  e.disable_demo();
 });
