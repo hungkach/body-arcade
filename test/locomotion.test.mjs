@@ -106,6 +106,20 @@ test('lean, point, turn around and wave each fire once, and a swipe is not a poi
   }
 });
 
+// Knees-up framing often loses the knees; arm gestures need only the upper
+// body (0.5.2: the phone menu opens with a wave, and waves paused with the
+// knees out of view)
+test('point, turn around and wave still fire with the knees out of view', () => {
+  const hide = (f) => { if (f.t >= 5500) for (const i of [25, 26, 27, 28]) f.lm[i][3] = f.wl[i][3] = 0.1; };
+  for (const [name, r] of Object.entries(runAll(GESTURES, { onFrame: hide }))) {
+    assert.equal(r.count('point', { side: 'left' }), 1, `${name}: point left`);
+    assert.equal(r.count('point', { side: 'right' }), 1, `${name}: point right`);
+    assert.equal(r.count('turn_around'), 1, `${name}: turn_around`);
+    assert.equal(r.count('wave', { hand: 'right' }), 1, `${name}: wave right`);
+    assert.equal(r.count('wave', { hand: 'left' }), 1, `${name}: wave left`);
+  }
+});
+
 test('lean signal: deadzone, full scale, and fast wrists suppress it', () => {
   const r = gestures.portrait;
   const at = (ms) => r.frames.find((f) => f.t >= ms);
