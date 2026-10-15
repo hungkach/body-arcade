@@ -8,16 +8,14 @@ Camera body-tracking fitness games for a phone or tablet, built on one shared mo
 | --- | --- |
 | `engine/` | rep-engine: camera, MediaPipe Pose, calibration, body-unit signals, demo mode, recorder, debug overlay |
 | `lab/` | Engine test bench: start the camera, calibrate, watch the signals, record and replay clips |
-| `stomp-city/` | Kaiju game (milestone 3) |
-| `manhattan-miles/` | Open-world city game (milestone 5) |
-| `build/` | Inlines `engine/` into one self-contained HTML file per game |
-| `dist/` | Build output: `dist/<game>.html`, ready to host |
+| `build/` | Inlines `engine/` into the lab page |
+| `dist/` | Build output: `dist/lab.html`, ready to host |
 | `test/` | Node tests, including the portrait vs landscape clip test |
 
 ## Commands
 
 ```
-npm run build   # writes dist/<game>.html
+npm run build   # writes dist/lab.html
 npm test        # builds, then runs every test in test/
 ```
 
@@ -33,15 +31,24 @@ engine.on('step', ({ leg }) => { ... }); // events
 const s = engine.signals();              // lean, squat_depth, confidence, ... every frame
 ```
 
-Games include the engine with a `<!-- rep-engine:inline -->` placeholder in their `index.html`; the build step replaces it. Edit `engine/`, never the inlined copy in `dist/`.
+## Games
+
+Each game lives in its own repo with a locked copy of this engine, and takes engine updates only when you run its update script:
+
+| Game | Repo | Play |
+| --- | --- | --- |
+| Stomp City | [hungkach/stomp-city](https://github.com/hungkach/stomp-city) | https://hungkach.github.io/stomp-city/ |
+| Manhattan Miles | [hungkach/manhattan-miles](https://github.com/hungkach/manhattan-miles) | https://hungkach.github.io/manhattan-miles/ |
+
+In a game repo: `npm run update-engine ../body-arcade`, then `npm test` and a play-through before pushing. Edit the engine here, never the copies in game repos.
 
 ## Milestone status
 
 1. Foundation: done. Calibration, normalization, smoothing, overlay, demo mode and clip recording.
-2. Locomotion detectors (march, high knees, lean, point, turn around, wave): next.
-3. stomp-city on the engine.
+2. Locomotion detectors (march, high knees, torso turn steering, point, turn around, wave): next.
+3. Stomp City detectors (strikes, stomp) and wiring in the stomp-city repo.
 4. Combat module.
-5. manhattan-miles hookup.
+5. Manhattan Miles hookup in the manhattan-miles repo.
 
 ## Testing on a phone
 
