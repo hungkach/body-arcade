@@ -293,6 +293,22 @@ test('done-when, demo: the dummy is struck, taken down, and finished', () => {
   e.disable_demo();
 });
 
+test('fight machine with requireJump: a drive up alone is a level change, a jump off it is the shot (0.7.0)', () => {
+  const cfg = RE.defaultConfig();
+  cfg.combat.fight.requireJump = true;
+  const c = new RE.Combat(cfg);
+  c.enter({ shooting: () => false, open: () => true });
+  assert.deepEqual(c.onEvent('drive_up', { speed: 2 }, 1000), []);
+  assert.deepEqual(c.update(1000 + cfg.combat.fight.requireJumpWaitMs - 10, {}), []);
+  assert.deepEqual(c.update(1000 + cfg.combat.fight.requireJumpWaitMs, {}).map((x) => x[0]), ['level_change']);
+  assert.equal(c.phase, 'standing');
+  c.onEvent('drive_up', { speed: 2 }, 5000);
+  const r = c.onEvent('jump', { height: 0.2 }, 5400);
+  assert.deepEqual(r.map((x) => x[0]), ['shot', 'takedown']);
+  assert.equal(r[1][1].jumped, true);
+  assert.equal(c.phase, 'top');
+});
+
 test('fight machine: holding a squat sprawls their shot; a drive up is the shot, a jump makes it stronger', () => {
   const cfg = RE.defaultConfig();
   const c = new RE.Combat(cfg);
