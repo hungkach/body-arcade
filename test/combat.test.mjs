@@ -429,3 +429,37 @@ test('bound: out to a side and back is one bound with its side; stepping over an
   const stay = scriptMotion([{ start: 6, end: 12, kind: 'body', expected: {}, apply(t, m) { m.shiftX = (m.shiftX || 0) + 0.45 * Math.min(1, Math.max(0, (t - 6) / 0.3)); } }]);
   for (const [name, r] of Object.entries(runAll(stay))) assert.equal(r.count('bound'), 0, `${name}: stepped over`);
 });
+
+test('requireJump: a jump from a shallow dip is not a shot; out of a real level change it is (0.8.1)', () => {
+  const script = scriptMotion([levelShot(8, { depth: 0.07, downS: 0.25, holdS: 0.1, upS: 0.22, jump: 0.1 }), levelShot(13, { depth: 0.3, holdS: 0.6, jump: 0.1 })]);
+  for (const name of ['portrait', 'landscape', 'livingRoom']) {
+    const d = dummy();
+    let log;
+    runScript(script, VARIANTS[name], {
+      config: { combat: { fight: { requireJump: true } } },
+      onFrame: (f, engine) => {
+        if (!log) { log = []; for (const n of ['jump', 'squat', 'shot', 'takedown', 'level_change']) engine.on(n, () => log.push(`${n}@${Math.round(engine.debug().raw.t / 1000)}`)); }
+        if (f.t >= 6000 && engine.mode() !== 'combat') engine.enter_combat(d);
+      },
+    });
+    const early = log.filter((x) => +x.split('@')[1] < 12), late = log.filter((x) => +x.split('@')[1] >= 12);
+    assert.ok(early.some((x) => x.startsWith('jump')), `${name}: the hop is a jump: ${log}`);
+    assert.ok(!early.some((x) => x.startsWith('shot') || x.startsWith('squat')), `${name}: a shallow dip and hop is not a shot: ${log}`);
+    assert.ok(late.some((x) => x.startsWith('shot')) && late.some((x) => x.startsWith('takedown')), `${name}: squat then jump is: ${log}`);
+  }
+});
+
+test('demo: jump from standing is only a jump; squat then jump is the shot (0.8.1)', () => {
+  const e = RE.create({ headless: true, config: { combat: { fight: { requireJump: true } } } });
+  e.enable_demo();
+  const demo = e.debug().demo;
+  const log = [];
+  for (const n of ['shot', 'takedown', 'jump']) e.on(n, () => log.push(n));
+  e.enter_combat({ open: () => true });
+  demo.press('jump', RE.now());
+  assert.deepEqual(log, ['jump']);
+  demo.press('squat', RE.now());
+  demo.press('jump', RE.now());
+  assert.deepEqual(log, ['jump', 'jump', 'shot', 'takedown']);
+  e.disable_demo();
+});
