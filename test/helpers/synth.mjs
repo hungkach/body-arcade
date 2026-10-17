@@ -320,6 +320,19 @@ export const moves = {
     rampS: 0.3,
     expected: { wave: 1 },
   }),
+  // a bound out to the player's side and back (whole body sideways, a little hop)
+  bound: (start, side, dist = 0.45, outS = 0.3, holdS = 0.1, backS = 0.35) => ({
+    start, end: start + outS + holdS + backS, kind: 'body', expected: { bound: 1 },
+    apply(t, m) {
+      const u = t - start;
+      let k = 0;
+      if (u > 0 && u < outS) k = Math.sin((Math.PI / 2) * (u / outS)) ** 2;
+      else if (u >= outS && u < outS + holdS) k = 1;
+      else if (u >= outS + holdS && u < outS + holdS + backS) k = Math.cos((Math.PI / 2) * ((u - outS - holdS) / backS)) ** 2;
+      m.shiftX = (m.shiftX || 0) + (side === 'right' ? -1 : 1) * dist * k; // the player's right is camera -x
+      m.bob = (m.bob || 0) + 0.04 * Math.sin(Math.PI * Math.min(1, Math.max(0, u / outS)));
+    },
+  }),
   // one fist up at the guard (the other hand down): a hand by the ear covers that side
   guardHand: (start, end, hand) => armPose(start, end, { [hand]: GUARD, rampS: 0.2 }),
   // both fists up at the guard

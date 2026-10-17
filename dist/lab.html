@@ -32,7 +32,7 @@
   #stats th:first-child, #stats td:first-child { text-align: left; }
 </style>
 <script>
-/* rep-engine 0.7.0, inlined by build/build.mjs. Edit engine/, not this copy. */
+/* rep-engine 0.8.0, inlined by build/build.mjs. Edit engine/, not this copy. */
 // ---- engine/core.js ----
 // rep-engine core: namespace, landmark indices, small shared helpers.
 // Every engine file is a plain script that adds to globalThis.RepEngine,
@@ -41,7 +41,7 @@
   'use strict';
   const RE = (g.RepEngine = g.RepEngine || {});
 
-  RE.version = '0.7.0';
+  RE.version = '0.8.0';
 
   // MediaPipe Pose landmark indices (33-point model). "Left" and "right"
   // are the player's own anatomical sides.
@@ -302,6 +302,7 @@
           downBelow: 0.3,    // m below the shoulder
           downSpeed: 1.2,    // m/s downward
           refSpeed: 5,       // m/s of fist speed that is power 1
+          overhand: true,    // a hook from the rear hand is 'overhand' (0.8.0)
         },
         // arm depth from foreshortening (ArmDepth in combat.js)
         depth: {
@@ -316,6 +317,14 @@
           full: 0.55,
           eventLevel: 0.5,
           eventReset: 0.2,
+        },
+        // a bound out to one side and back (0.8.0): hip midpoint in S from where it was at calibration
+        bound: {
+          center: 0.35,  // S: starts from within this of the middle
+          out: 0.9,      // S: gets this far to one side
+          outMs: 600,    // within this long of leaving the middle
+          back: 0.4,     // S: and comes back within this of the middle
+          backMs: 900,   // within this long of its furthest point
         },
         level: {
           squat: 0.3,      // T level drop that is a squat (spec 0.35; 0.4.2 eased for a fighting crouch)
@@ -1317,7 +1326,7 @@
   const RE = g.RepEngine;
   const L = RE.LM;
 
-  for (const name of ['strike', 'squat', 'drive_up', 'jump', 'slip', 'stance']) RE.detectors.add(name);
+  for (const name of ['strike', 'squat', 'drive_up', 'jump', 'slip', 'stance', 'bound']) RE.detectors.add(name);
 
   const sub = (a, b) => ({ x: a.x - b.x, y: a.y - b.y, z: a.z - b.z });
   const dot = (a, b) => a.x * b.x + a.y * b.y + a.z * b.z;
@@ -1452,8 +1461,10 @@
         if (a.angle < this.c.rearm) h.armed = true;
         if (h.hist.length < 3 || t - h.last < this.c.refractoryMs) continue;
         if (ctx.upperLow) continue;
-        const type = this.classify(ctx, hand, a, h.hist, out);
+        let type = this.classify(ctx, hand, a, h.hist, out);
         if (!type) continue;
+        // 0.8.0 (Mark): a hook from the rear hand is the overhand
+        if (type === 'hook' && this.c.overhand && hand === (out.stance === 'southpaw' ? 'left' : 'right')) type = 'overhand';
         h.last = t;
         if (type === 'jab' || type === 'cross' || type === 'down') { h.armed = false; h.lastStraight = t; }
         const speed = this.peakSpeed(h.hist);
@@ -1604,6 +1615,35 @@
     }
   }
 
+  // Bound (0.8.0, Mark: a bound out and back, after Homecoming Hero, makes an
+  // angle like Dillashaw or Cruz). The hip midpoint, against where it was at
+  // calibration (body x, S): from near the middle (bound.center) it gets
+  // bound.out to one side within bound.outMs, then comes back near the middle
+  // (bound.back) within bound.backMs of its furthest point: 'bound' with the
+  // side it went to (the player's own left or right), how far (S) and how
+  // long the whole move took (ms).
+  class BoundDetector {
+    constructor(cfg) { this.c = cfg.combat.bound; this.hist = []; this.peak = null; }
+    update(ctx, out) {
+      const t = ctx.t, c = this.c;
+      if (!ctx.sig.hipsSeen && !ctx.sig.upperSeen) { this.peak = null; return; }
+      const x = ctx.sig.hipsSeen ? ctx.sig.body.hMid.x : ctx.sig.body.sMid.x;
+      this.hist.push({ t, x });
+      while (this.hist.length && t - this.hist[0].t > c.outMs) this.hist.shift();
+      if (!this.peak && Math.abs(x) >= c.out) {
+        // left the middle quickly: the bound is on
+        const start = this.hist.find((s) => Math.abs(s.x) <= c.center && Math.sign(s.x || x) !== -Math.sign(x));
+        if (start) this.peak = { t, x, from: start.t };
+      } else if (this.peak) {
+        if (Math.sign(x) === Math.sign(this.peak.x) && Math.abs(x) > Math.abs(this.peak.x)) { this.peak.t = t; this.peak.x = x; }
+        if (Math.abs(x) <= c.back) {
+          out.events.push(['bound', { side: this.peak.x > 0 ? 'right' : 'left', dist: Math.abs(this.peak.x), ms: t - this.peak.from }]);
+          this.peak = null;
+        } else if (t - this.peak.t > c.backMs) this.peak = null; // stepped over and stayed: not a bound
+      }
+    }
+  }
+
   // Arm depth (0.6.0, after the first camera fights: hooks and uppercuts
   // landed, straights did not). MediaPipe's world landmarks judge depth
   // poorly, and a straight goes right at the camera, so its world depth comes
@@ -1689,7 +1729,7 @@
   }
 
   // run after the locomotion detectors (stance reads the turn detector's yaw)
-  RE.makeCombatDetectors = (cfg) => [new ArmPose(cfg), new GuardDetector(cfg), new StanceDetector(cfg), new StrikeDetector(cfg), new SlipDetector(cfg), new LevelDetector(cfg)];
+  RE.makeCombatDetectors = (cfg) => [new ArmPose(cfg), new GuardDetector(cfg), new StanceDetector(cfg), new StrikeDetector(cfg), new SlipDetector(cfg), new LevelDetector(cfg), new BoundDetector(cfg)];
 
   // Fight state machine (spec update_combat; reworked in 0.5.0 after Mark's
   // camera test). Runs only in combat mode. target, from enter_combat, all
@@ -2434,6 +2474,8 @@
         case 'cross': strike(this.rear(), 'cross'); break;
         case 'hook': strike(this.lead(), 'hook'); break;
         case 'uppercut': strike(this.rear(), 'uppercut'); break;
+        case 'overhand': strike(this.rear(), 'overhand'); break;
+        case 'bound_left': case 'bound_right': this.emit('bound', { side: action === 'bound_left' ? 'left' : 'right', dist: 1.2, ms: 600 }); break;
         case 'slip_left': case 'slip_right': {
           const side = action === 'slip_left' ? 'left' : 'right';
           this.slip = side === 'left' ? -1 : 1;
@@ -2480,7 +2522,7 @@
 
   const BUTTONS = [
     ['point_left', 'Point L'], ['point_right', 'Point R'], ['turn_around', 'Turn 180'], ['wave_left', 'Wave L'], ['wave_right', 'Wave'],
-    ['jab', 'Jab'], ['cross', 'Cross'], ['hook', 'Hook'], ['uppercut', 'Upper'],
+    ['jab', 'Jab'], ['cross', 'Cross'], ['hook', 'Hook'], ['overhand', 'Overhand'], ['uppercut', 'Upper'], ['bound_left', 'Bound L'], ['bound_right', 'Bound R'],
     ['guard', 'Guard'], ['slip_left', 'Slip L'], ['slip_right', 'Slip R'], ['stance', 'Stance'],
     ['squat', 'Squat'], ['drive_up', 'Drive up'], ['jump', 'Jump'], ['stomp', 'Stomp'],
   ];

@@ -22,7 +22,7 @@ const fight = (scale) => {
   segs.push(moves.squat(19, 0.3 * scale, 0.6, 0.6, 2.0), moves.shot(23, 0.3 * scale));
   return scriptMotion(segs);
 };
-const WANT = ['left-jab', 'right-cross', 'left-hook', 'right-hook', 'left-uppercut', 'right-uppercut'];
+const WANT = ['left-jab', 'right-cross', 'left-hook', 'right-overhand', 'left-uppercut', 'right-uppercut'];
 
 for (const [body, b] of Object.entries(BODIES)) {
   test(`${body} body: every gesture and the fight combination, in three framings`, () => {
@@ -38,9 +38,11 @@ for (const [body, b] of Object.entries(BODIES)) {
       assert.equal(r.count('turn_right'), 1, `${tag}: turn right`);
       assert.equal(r.count('point', { side: 'left' }), 1, `${tag}: point`);
       assert.equal(r.count('turn_around'), 1, `${tag}: turn around`);
+      assert.equal(r.count('bound'), 0, `${tag}: no bound from walking and gestures`);
       assert.equal(r.count('wave', { hand: 'right' }), 1, `${tag}: wave right`);
       assert.equal(r.count('wave', { hand: 'left' }), 1, `${tag}: wave left`);
       const f = runScript(F, v);
+      assert.equal(f.count('bound'), 0, `${tag}: no bound from the fight combination`);
       assert.deepEqual(f.events.filter((e) => e.name === 'strike').map((e) => `${e.payload.hand}-${e.payload.type}`), WANT, `${tag}: strikes`);
       assert.equal(f.count('squat'), 2, `${tag}: squats`);
       assert.equal(f.count('drive_up'), 1, `${tag}: drive ups`);

@@ -25,8 +25,9 @@ function combo(stance, t0 = 6.5) {
   return { script: scriptMotion(segs), thrown };
 }
 const label = (stance, hand, type) => {
-  if (type !== 'straight') return `${hand}-${type}`;
   const lead = stance === 'southpaw' ? 'right' : 'left';
+  if (type === 'hook' && hand !== lead) return `${hand}-overhand`; // 0.8.0: the rear hook
+  if (type !== 'straight') return `${hand}-${type}`;
   return `${hand}-${hand === lead ? 'jab' : 'cross'}`;
 };
 
@@ -414,4 +415,17 @@ test('demo: stance switches which hand jabs; slips and the arm pose for drawing 
   const a = d.arms(150);
   assert.ok(a.left.reach > 0.8, 'the cross hand is out');
   d.destroy();
+});
+
+test('bound: out to a side and back is one bound with its side; stepping over and staying is not (0.8.0)', () => {
+  const script = scriptMotion([moves.stance(5, 16, 'orthodox'), moves.bound(7, 'left'), moves.bound(10, 'right')]);
+  for (const [name, r] of Object.entries(runAll(script))) {
+    const b = r.events.filter((e) => e.name === 'bound');
+    assert.deepEqual(b.map((e) => e.payload.side), ['left', 'right'], `${name}: ${JSON.stringify(b.map((e) => e.payload))}`);
+    for (const e of b) assert.ok(e.payload.ms < 1500 && e.payload.dist >= 0.9, `${name}: ${JSON.stringify(e.payload)}`);
+    assert.equal(r.count('strike'), 0, `${name}: no strikes`);
+  }
+  // a step to the side that stays there
+  const stay = scriptMotion([{ start: 6, end: 12, kind: 'body', expected: {}, apply(t, m) { m.shiftX = (m.shiftX || 0) + 0.45 * Math.min(1, Math.max(0, (t - 6) / 0.3)); } }]);
+  for (const [name, r] of Object.entries(runAll(stay))) assert.equal(r.count('bound'), 0, `${name}: stepped over`);
 });
