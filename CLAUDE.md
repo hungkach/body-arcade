@@ -14,7 +14,14 @@ Mark's camera body-tracking fitness games for a phone or tablet. All games share
 
 Every game in the arcade follows this, and it overrides game-specific habits. In one line: every rep counts, better reps count more, and the scoreboard doesn't lie. A minimum honest rep always works, so anyone can play; more effort always pays more, so the people who push get rewarded for it. Nothing is handed out for showing up.
 
-This is a coaching principle, not a social message: write it and voice it the way a good strength coach runs a room (plain, factual, no slogans, no preaching).
+This is a coaching principle, not a social message: write it and voice it the way a good strength coach runs a room. Two jobs, never mixed up: encourage effort out loud, keep the scoreboard honest. The coach is loud and warm during the work and honest about the numbers; encouragement is free, rewards are earned. No slogans, no preaching, never scold.
+
+Encouraging (the voice):
+
+- Cheer effort as it happens, specifically: "Knees up, there it is", "Good depth", "That's work", "Stay with it". Name the rep the player just did; never mock or joke at low effort.
+- Pushing through counts. Finishing an interval, holding on in the last minutes, and showing up for a full session get a plain coach line ("20 minutes of work. That counts."). That is acknowledgment, not a prize: no points, badges or grades for it.
+- Frame everything forward. Lead with the work done, then the cue: "12 minutes in. Knees are dropping, take 60 seconds and come back strong," not "74% of your early effort".
+- Show progress as something to chase: a best to beat, a streak, how close the last effort came.
 
 Accessible (the floor):
 
@@ -26,9 +33,9 @@ Accessible (the floor):
 
 Honest (the scoreboard):
 
-- Minimum reps keep you playing; quality reps win. Wins, sacks, combos, grades, stars, records and bonuses need real quality, never just time spent or reps attempted. No grade inflation, no reward for finishing alone, no "great job" for everything.
-- Acknowledge effort with facts, not praise. Summaries state what the player did: reps, work and rest time, distance, and how quality held from the first rounds to the last. Praise is saved for things earned: a personal best, a record, quality held late in a session.
-- Fatigue is information, not failure. When quality drops, respond the way a sideline would (rotate out, rest, go again) and say what changed in plain numbers. Never scold, never hide or round up the drop.
+- Minimum reps keep you playing; quality reps win. Wins, sacks, combos, grades, stars, records and bonuses need real quality, never just time spent or reps attempted. No grade inflation and no prize for showing up, but every honest minute still earns some progress (XP and the like), so the effort line between a tired minute and a great one is a gentle slope, not a cliff (about half of the top, not a third).
+- Summaries lead with the work done (time, reps, distance, intervals finished), then the highlights and bests, then one forward cue. Early vs late quality is shown as "held strong for the first 10 minutes" or a best to chase, not as a percentage grade.
+- Fatigue is information, not failure. When quality drops, respond the way a sideline would (rotate out, rest, go again), credit the work first, and say what changed in one plain line. Never scold, never hide the drop, never make it sound like a grade.
 - Measure against the player's own body: calibration and the warm-up set the range, so the bar is fitted, not lowered. Compare players only to their own history.
 - Cap the top. Extra effort past the player's range earns a small capped bonus, so nobody is rewarded for unsafe, out-of-control reps.
 

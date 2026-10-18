@@ -8,7 +8,7 @@ Every rep counts, better reps count more, and the scoreboard doesn't lie.
 
 A minimum honest rep always works, so anyone can play. More effort always pays more: higher knees run faster, a bigger bound jukes farther, a deeper squat hits harder. The floor comes from your own warm-up (including a tired-pace round), winning is never punished, and anything that needs precision a camera or a tired body can't give is automated.
 
-The scoreboard stays honest: minimum reps keep you playing, quality reps win. Summaries report what you did in plain numbers, praise is saved for what you earned, and when fatigue drops your quality the game rotates you out to rest instead of pretending otherwise.
+Two jobs, like a good coach: encourage effort out loud, keep the scoreboard honest. The voice cheers good reps as they happen and credits pushing through. Points, wins and records still need quality, every honest minute still earns some progress, and when fatigue drops your quality the game credits the work, rotates you out to rest, and brings you back.
 
 ## Layout
 
