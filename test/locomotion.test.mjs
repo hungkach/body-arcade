@@ -146,6 +146,15 @@ test('a raised or waving hand does not steer, even with the shoulders turned (0.
   }
 });
 
+test('hands up in a guard still steer: only a hand raised out to the side stops it (0.8.2)', () => {
+  const script = scriptMotion([moves.highGuard(5, 10), moves.holdTurn(6, 9.5, 40)]);
+  for (const [name, r] of Object.entries(runAll(script))) {
+    const f = r.frames.find((q) => q.t >= 8500).snap.turn;
+    assert.ok(Math.abs(f) > 0.3, `${name}: guard up, turned, steering ${f}`);
+    assert.equal(r.count('turn_right') + r.count('turn_left'), 1, `${name}: the turn event`);
+  }
+});
+
 test('lean signal: deadzone, full scale, and fast wrists suppress it', () => {
   const r = gestures.portrait;
   const at = (ms) => r.frames.find((f) => f.t >= ms);

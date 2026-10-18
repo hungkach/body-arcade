@@ -254,6 +254,7 @@ function armPose(start, end, { left, right, rampS = 0.25, expected = {} }) {
 const POINT = { a: Math.PI / 2, f: 0, a2: Math.PI / 2, f2: 0 };
 // Fighting poses. Guard: elbows down and in front, fists up by the cheeks.
 export const GUARD = { a: 0.25, f: 0.55, a2: Math.PI + 0.55, f2: 0.25 };
+export const HIGH_GUARD = { a: 0.2, f: 1.1, a2: Math.PI + 0.35, f2: 0.35 };
 const STRAIGHT = { a: Math.PI / 2 - 0.12, f: Math.PI / 2 - 0.15, a2: Math.PI / 2 - 0.08, f2: Math.PI / 2 - 0.05 }; // fist at the camera, shoulder height
 const HOOK_OUT = { a: Math.PI / 2 - 0.1, f: 0.1, a2: Math.PI / 2 - 0.1, f2: 0.1 + Math.PI / 2 }; // elbow up and out, bent 90
 const HOOK_IN = { a: Math.PI / 2 - 0.1, f: 1.0, a2: Math.PI / 2 - 0.1, f2: 1.0 + Math.PI / 2 }; // swept across the front
@@ -337,6 +338,8 @@ export const moves = {
   guardHand: (start, end, hand) => armPose(start, end, { [hand]: GUARD, rampS: 0.2 }),
   // both fists up at the guard
   guard: (start, end) => armPose(start, end, { left: GUARD, right: GUARD, rampS: 0.2 }),
+  // a high guard: elbows in, fists up by the brow, in front of the face
+  highGuard: (start, end) => armPose(start, end, { left: HIGH_GUARD, right: HIGH_GUARD, rampS: 0.2 }),
   // fighting stance: guard up and the torso bladed deg toward the lead side
   // (orthodox leads with the left shoulder, so the torso turns to the right)
   stance: (start, end, kind = 'orthodox', deg = 25) => ({
