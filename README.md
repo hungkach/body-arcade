@@ -2,9 +2,13 @@
 
 Camera body-tracking fitness games for a phone or tablet, built on one shared movement engine (rep-engine). No accessories; the living room preset is a phone propped about 4 ft away with knees-up framing.
 
-## Philosophy: reward effort, stay accessible
+## Philosophy: honest reps
+
+Every rep counts, better reps count more, and the scoreboard doesn't lie.
 
 A minimum honest rep always works, so anyone can play. More effort always pays more: higher knees run faster, a bigger bound jukes farther, a deeper squat hits harder. The floor comes from your own warm-up (including a tired-pace round), winning is never punished, and anything that needs precision a camera or a tired body can't give is automated.
+
+The scoreboard stays honest: minimum reps keep you playing, quality reps win. Summaries report what you did in plain numbers, praise is saved for what you earned, and when fatigue drops your quality the game rotates you out to rest instead of pretending otherwise.
 
 ## Layout
 

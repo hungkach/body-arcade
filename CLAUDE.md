@@ -10,15 +10,27 @@ Mark's camera body-tracking fitness games for a phone or tablet. All games share
 - Games are fitness first: every concept names its S&C payoff, matches the sport's work-to-rest rhythm, and keeps sessions to 10 to 20 minutes.
 - Repo, file and game names stay neutral and fitness oriented.
 
-## Design philosophy: reward effort, stay accessible
+## Design philosophy: honest reps
 
-Every game in the arcade follows this. A minimum honest rep always works, so anyone can play; more effort always pays more, so the people who push get rewarded for it.
+Every game in the arcade follows this, and it overrides game-specific habits. In one line: every rep counts, better reps count more, and the scoreboard doesn't lie. A minimum honest rep always works, so anyone can play; more effort always pays more, so the people who push get rewarded for it. Nothing is handed out for showing up.
+
+This is a coaching principle, not a social message: write it and voice it the way a good strength coach runs a room (plain, factual, no slogans, no preaching).
+
+Accessible (the floor):
 
 - The floor is the player's own weakest honest rep, found in the warm-up (including an easy, tired-pace round), never a fixed athletic standard. A tired rep late in the session still counts.
 - Above the floor, the move scales with effort, smoothly and with no cliff: higher, faster, deeper, farther all give more in the game.
 - Winning is never punished. Beating an obstacle costs little or nothing, so a great run can keep going.
 - Precision that a camera or a tired body can't deliver is automated (paths, aiming, generous timing windows). The player supplies effort and decisions, not fine control.
 - Every detector that a game rewards should report a magnitude, not just a yes: the engine already does this with `stride`, `bound` { dist, ms }, strike `power` and shot `power`.
+
+Honest (the scoreboard):
+
+- Minimum reps keep you playing; quality reps win. Wins, sacks, combos, grades, stars, records and bonuses need real quality, never just time spent or reps attempted. No grade inflation, no reward for finishing alone, no "great job" for everything.
+- Acknowledge effort with facts, not praise. Summaries state what the player did: reps, work and rest time, distance, and how quality held from the first rounds to the last. Praise is saved for things earned: a personal best, a record, quality held late in a session.
+- Fatigue is information, not failure. When quality drops, respond the way a sideline would (rotate out, rest, go again) and say what changed in plain numbers. Never scold, never hide or round up the drop.
+- Measure against the player's own body: calibration and the warm-up set the range, so the bar is fitted, not lowered. Compare players only to their own history.
+- Cap the top. Extra effort past the player's range earns a small capped bonus, so nobody is rewarded for unsafe, out-of-control reps.
 
 ```python
 # how a game turns a detected move into a reward
