@@ -12,42 +12,40 @@ Mark's camera body-tracking fitness games for a phone or tablet. All games share
 
 ## Design philosophy: honest reps
 
-Every game in the arcade follows this, and it overrides game-specific habits. In one line: every rep counts, better reps count more, and the scoreboard doesn't lie. A minimum honest rep always works, so anyone can play; more effort always pays more, so the people who push get rewarded for it. Nothing is handed out for showing up.
+Every game in the arcade follows this, and it overrides game-specific habits. Every rep counts, better reps count more, and the scoreboard doesn't lie.
 
-This is a coaching principle, not a social message: write it and voice it the way a good strength coach runs a room. Two jobs, never mixed up: encourage effort out loud, keep the scoreboard honest. The coach is loud and warm during the work and honest about the numbers; encouragement is free, rewards are earned. No slogans, no preaching, never scold.
+Effort is subjective: a tired rep, or an unfit player's best rep, is real effort, so it always works. Output is objective: what a rep does in the game comes from how deep, high, fast and far it actually was. The player's own fitness is the progression model: play more, get fitter, squat lower, drive the knees higher, and the game gets better for you.
 
-Encouraging (the voice):
+The floor (anyone can play):
 
-- Cheer effort as it happens, specifically: "Knees up, there it is", "Good depth", "That's work", "Stay with it". Name the rep the player just did; never mock or joke at low effort.
-- Pushing through counts. Finishing an interval, holding on in the last minutes, and showing up for a full session get a plain coach line ("20 minutes of work. That counts."). That is acknowledgment, not a prize: no points, badges or grades for it.
-- Frame everything forward. Lead with the work done, then the cue: "12 minutes in. Knees are dropping, take 60 seconds and come back strong," not "74% of your early effort".
-- Show progress as something to chase: a best to beat, a streak, how close the last effort came.
-
-Accessible (the floor):
-
-- The floor is the player's own weakest honest rep, found in the warm-up (including an easy, tired-pace round), never a fixed athletic standard. A tired rep late in the session still counts.
-- Above the floor, the move scales with effort, smoothly and with no cliff: higher, faster, deeper, farther all give more in the game.
-- Winning is never punished. Beating an obstacle costs little or nothing, so a great run can keep going.
+- The floor is the player's own weakest honest rep, found in the warm-up (including an easy, tired-pace round), never a fixed athletic standard. Anything at or above it always works, at any fitness level and at any point in a tired session.
 - Precision that a camera or a tired body can't deliver is automated (paths, aiming, generous timing windows). The player supplies effort and decisions, not fine control.
-- Every detector that a game rewards should report a magnitude, not just a yes: the engine already does this with `stride`, `bound` { dist, ms }, strike `power` and shot `power`.
+- Winning is never punished. Beating an obstacle costs little or nothing, so a great run can keep going.
 
-Honest (the scoreboard):
+The scale (fitness is the progression):
 
-- Minimum reps keep you playing; quality reps win. Wins, sacks, combos, grades, stars, records and bonuses need real quality, never just time spent or reps attempted. No grade inflation and no prize for showing up, but every honest minute still earns some progress (XP and the like), so the effort line between a tired minute and a great one is a gentle slope, not a cliff (about half of the top, not a third).
-- Summaries lead with the work done (time, reps, distance, intervals finished), then the highlights and bests, then one forward cue. Early vs late quality is shown as "held strong for the first 10 minutes" or a best to chase, not as a percentage grade.
-- Fatigue is information, not failure. When quality drops, respond the way a sideline would (rotate out, rest, go again), credit the work first, and say what changed in one plain line. Never scold, never hide the drop, never make it sound like a grade.
-- Measure against the player's own body: calibration and the warm-up set the range, so the bar is fitted, not lowered. Compare players only to their own history.
-- Cap the top. Extra effort past the player's range earns a small capped bonus, so nobody is rewarded for unsafe, out-of-control reps.
+- Above the floor, reward scales smoothly with absolute output in body units (S, T, degrees, body units per second), with no cliff.
+- Never re-normalize to the player's best, their early reps in a session, or a rolling average: that erases fitness gains. The floor adapts to the player; the scale does not. A deeper squat hits harder this month than last month because it is deeper.
+- Cap the top at a safe range in body units, not at the player's current best, so nobody is rewarded for out-of-control reps.
+- Every detector that a game rewards reports a magnitude, not just a yes: the engine already does this with `stride`, `bound` { dist, ms }, strike `power` and shot `power`.
+
+The scoreboard (honest):
+
+- Outcomes come from output. Wins, sacks, combos and bonuses need the reps that earn them; nothing is handed out for time spent or showing up, and no grind meter (XP per minute and the like) stands in for fitness.
+- Records track output over time in body units (deepest squat, highest knees, fastest punch, longest bound, best cadence), so progress shows across weeks.
+- Summaries state facts. No cheering, no praise lines, no scolding, and no commentary on fatigue: a tired session simply produces tired numbers.
+- Rest comes from the sport's own rhythm (rounds, series, sideline, transit), not from the game judging a drop.
+- Tone: plain. Humor aims at the world, never at the player's effort.
 
 ```python
 # how a game turns a detected move into a reward
-if not detected:            # below the player's own floor: nothing happens, no penalty
+if output < player_floor:
+    # below the player's own weakest honest rep: not a rep, no penalty
     reward = 0
-elif effort <= floor:        # an honest minimum rep (tired, small, slow) still works
-    reward = base
-else:                        # above it, more effort pays more, capped so it never breaks the game
-    reward = base + gain * min(effort - floor, cap)
-# never subtract for success: beating a defender, a block, or a level costs little or nothing
+else:
+    # absolute output, so getting fitter pays more; base keeps any honest rep useful
+    reward = base + gain * min(output, safe_cap)
+# never re-normalize to today's best; never subtract for success
 ```
 
 Homecoming Hero is the reference: knee height and cadence set speed (a tired jog still runs), bound distance and speed set the juke (1.2 to 2.6 yards), squat depth sets truck power and the pass pro anchor, and a deep squat into a pile allows a breakout.
