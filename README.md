@@ -2,6 +2,10 @@
 
 Camera body-tracking fitness games for a phone or tablet, built on one shared movement engine (rep-engine). No accessories; the living room preset is a phone propped about 4 ft away with knees-up framing.
 
+## Philosophy: reward effort, stay accessible
+
+A minimum honest rep always works, so anyone can play. More effort always pays more: higher knees run faster, a bigger bound jukes farther, a deeper squat hits harder. The floor comes from your own warm-up (including a tired-pace round), winning is never punished, and anything that needs precision a camera or a tired body can't give is automated.
+
 ## Layout
 
 | Folder | What it is |
@@ -52,6 +56,9 @@ Each game lives in its own repo with a locked copy of this engine, and takes eng
 | --- | --- | --- |
 | Stomp City | [hungkach/stomp-city](https://github.com/hungkach/stomp-city) | https://hungkach.github.io/stomp-city/ |
 | Manhattan Miles | [hungkach/manhattan-miles](https://github.com/hungkach/manhattan-miles) | https://hungkach.github.io/manhattan-miles/ |
+| Homecoming Hero | [hungkach/homecoming-hero](https://github.com/hungkach/homecoming-hero) | https://hungkach.github.io/homecoming-hero/ |
+
+Homecoming Hero still runs its own tracker (body core v0.6) rather than a locked copy of rep-engine; it predates the engine.
 
 In a game repo: `npm run update-engine ../body-arcade`, then `npm test` and a play-through before pushing. Edit the engine here, never the copies in game repos.
 

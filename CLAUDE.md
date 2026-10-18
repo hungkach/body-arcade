@@ -10,11 +10,34 @@ Mark's camera body-tracking fitness games for a phone or tablet. All games share
 - Games are fitness first: every concept names its S&C payoff, matches the sport's work-to-rest rhythm, and keeps sessions to 10 to 20 minutes.
 - Repo, file and game names stay neutral and fitness oriented.
 
+## Design philosophy: reward effort, stay accessible
+
+Every game in the arcade follows this. A minimum honest rep always works, so anyone can play; more effort always pays more, so the people who push get rewarded for it.
+
+- The floor is the player's own weakest honest rep, found in the warm-up (including an easy, tired-pace round), never a fixed athletic standard. A tired rep late in the session still counts.
+- Above the floor, the move scales with effort, smoothly and with no cliff: higher, faster, deeper, farther all give more in the game.
+- Winning is never punished. Beating an obstacle costs little or nothing, so a great run can keep going.
+- Precision that a camera or a tired body can't deliver is automated (paths, aiming, generous timing windows). The player supplies effort and decisions, not fine control.
+- Every detector that a game rewards should report a magnitude, not just a yes: the engine already does this with `stride`, `bound` { dist, ms }, strike `power` and shot `power`.
+
+```python
+# how a game turns a detected move into a reward
+if not detected:            # below the player's own floor: nothing happens, no penalty
+    reward = 0
+elif effort <= floor:        # an honest minimum rep (tired, small, slow) still works
+    reward = base
+else:                        # above it, more effort pays more, capped so it never breaks the game
+    reward = base + gain * min(effort - floor, cap)
+# never subtract for success: beating a defender, a block, or a level costs little or nothing
+```
+
+Homecoming Hero is the reference: knee height and cadence set speed (a tired jog still runs), bound distance and speed set the juke (1.2 to 2.6 yards), squat depth sets truck power and the pass pro anchor, and a deep squat into a pile allows a breakout.
+
 ## Layout and build
 
 - `engine/`: plain scripts, each an IIFE that adds to `globalThis.RepEngine`. Load order is `engine/manifest.json`. No ES module syntax and no `</script` anywhere in engine source (the build inlines it).
 - `lab/`: engine test bench. `build/build.mjs` inlines the engine into `lab/index.html` and writes `dist/lab.html`. Commit `dist/`; GitHub Pages serves it at `https://hungkach.github.io/body-arcade/dist/lab.html`.
-- Games live in their own repos (`hungkach/stomp-city`, `hungkach/manhattan-miles`), each with a locked copy of `engine/` and `scripts/update-engine.mjs` to take a newer one. Do not add game folders here. Engine changes never reach a game until that game's repo runs its update script, so note in your report which game repos should update and why.
+- Games live in their own repos (`hungkach/stomp-city`, `hungkach/manhattan-miles`, `hungkach/homecoming-hero`), each with a locked copy of `engine/` and `scripts/update-engine.mjs` to take a newer one (Homecoming Hero is the exception for now: its own tracker, see milestone 6). Do not add game folders here. Engine changes never reach a game until that game's repo runs its update script, so note in your report which game repos should update and why.
 - `npm test` builds, then runs `node --test test/*.test.mjs`. No dependencies. Keep it green before every push.
 - `test/helpers/synth.mjs` generates synthetic clips of a scripted 3D movement in any framing (`moves` and `scriptMotion` compose them); `test/helpers/run-clip.mjs` runs one through a headless engine across the standard framings. New detectors get a synthetic-clip test plus portrait vs landscape parity.
 
@@ -44,6 +67,7 @@ Mark's camera body-tracking fitness games for a phone or tablet. All games share
    Engine 0.8.1 (Mark: a jump without a deep enough squat must not take them down): tests confirm a hop from standing or a shallow dip is only a 'jump', never a shot (the shot needs a 'squat' past `level.squat`, then the drive up, then the jump); the demo Jump button now shoots only out of a held Squat. manhattan-miles takes it.
    Engine 0.8.2 (Mark: the warm-up stopped seeing his shoulder turns): 0.6.2's raised-hand steering cutoff also fired for hands up in a guard by the face. Now a raised wrist counts only when it is out at or past its shoulder along the shoulder line in the world landmarks (`lean.raisedOut`), so a turned torso does not swing a guard hand outward; `moves.highGuard` and a test (guard up, turned, still steers). Both game repos should take it.
 5. Manhattan Miles hookup: move its in-game locomotion onto the engine state machine, in the manhattan-miles repo.
+6. Homecoming Hero joins the arcade (a first-person running back game: high knees to run, bound to juke, squat to truck, an arm out to stiff arm, a squat hold for pass pro). For now it keeps its own tracker, `body core v0.6`, inside its single `index.html`; it predates rep-engine, and rep-engine's step trigger came from it. Moving it onto rep-engine is a later milestone: map its events (step with knee height, hop, level, duck, raise, jump) to the engine's and keep its effort rewards.
 
 ## Working with Mark
 
