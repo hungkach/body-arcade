@@ -426,3 +426,11 @@ test('demo mode drives the same state machine', async () => {
   e.disable_demo();
   assert.equal(e.signals().speed, 0);
 });
+
+test('knee_lift: high knees read higher than a march, in torso lengths (0.8.3)', () => {
+  const r1 = runScript(scriptMotion([moves.march(5, 15)]), VARIANTS.livingRoom);
+  const r2 = runScript(scriptMotion([moves.highKnees(5, 15)]), VARIANTS.livingRoom);
+  const at = (r) => r.frames.find((f) => f.t >= 14000).snap.knee_lift;
+  assert.ok(at(r1) > 0.05, `march ${at(r1)}`);
+  assert.ok(at(r2) > at(r1) * 1.2, `high knees ${at(r2)} vs march ${at(r1)}`);
+});

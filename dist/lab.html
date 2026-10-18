@@ -32,7 +32,7 @@
   #stats th:first-child, #stats td:first-child { text-align: left; }
 </style>
 <script>
-/* rep-engine 0.8.2, inlined by build/build.mjs. Edit engine/, not this copy. */
+/* rep-engine 0.8.3, inlined by build/build.mjs. Edit engine/, not this copy. */
 // ---- engine/core.js ----
 // rep-engine core: namespace, landmark indices, small shared helpers.
 // Every engine file is a plain script that adds to globalThis.RepEngine,
@@ -41,7 +41,7 @@
   'use strict';
   const RE = (g.RepEngine = g.RepEngine || {});
 
-  RE.version = '0.8.2';
+  RE.version = '0.8.3';
 
   // MediaPipe Pose landmark indices (33-point model). "Left" and "right"
   // are the player's own anatomical sides.
@@ -2988,6 +2988,7 @@
           guard_left: det && det.guardHands ? det.guardHands.left : false,
           guard_right: det && det.guardHands ? det.guardHands.right : false,
           stride: det && det.stride ? det.stride : 1,
+          knee_lift: det && det.kneeLift ? det.kneeLift : 0, // T, average peak knee rise of the recent steps (0.8.3)
           stance: det ? det.stance : 'square',
           slip: det ? det.slip : 0,
           level_low: det ? !!det.levelLow : false,
@@ -3295,7 +3296,7 @@
   };
 
   function emptySnapshot() {
-    return { cadence_spm: 0, effort: 0, speed: 0, turn: 0, lean: 0, squat_depth: 0, guard_up: false, guard_left: false, guard_right: false, stance: 'square', slip: 0, level_low: false, stride: 1, confidence: 0 };
+    return { cadence_spm: 0, effort: 0, speed: 0, turn: 0, lean: 0, squat_depth: 0, guard_up: false, guard_left: false, guard_right: false, stance: 'square', slip: 0, level_low: false, stride: 1, knee_lift: 0, confidence: 0 };
   }
 })(globalThis);
 </script>
