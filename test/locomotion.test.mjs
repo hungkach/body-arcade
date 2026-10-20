@@ -82,8 +82,8 @@ test('high knees start one run, run at run speed, and end it', () => {
     const start = r.events.find((e) => e.name === 'run_start').t;
     const end = r.events.find((e) => e.name === 'run_end').t;
     assert.ok(start > 9000 && start < 10500, `${name}: run started at ${start}`);
-    // the last high knee lands just before 19 s; the run ends 600 ms later
-    assert.ok(end > 19000 && end < 19800, `${name}: run ended at ${end}`);
+    // the last high knee lands just before 19 s; the run ends exitMs (800 ms) later
+    assert.ok(end > 19000 && end < 20000, `${name}: run ended at ${end}`);
     const during = r.frames.find((f) => f.t >= 15000);
     assert.equal(during.loco.state, 'run');
     // high knees run at runSpeed, longer still for higher knees (stride up to strideMax)
@@ -433,4 +433,21 @@ test('knee_lift: high knees read higher than a march, in torso lengths (0.8.3)',
   const at = (r) => r.frames.find((f) => f.t >= 14000).snap.knee_lift;
   assert.ok(at(r1) > 0.05, `march ${at(r1)}`);
   assert.ok(at(r2) > at(r1) * 1.2, `high knees ${at(r2)} vs march ${at(r1)}`);
+});
+
+test('tired high knees still run: 130 steps a minute with knees up (0.8.4)', () => {
+  // Mark 10/19: intervals counted 1 or 2 s of running out of 30. Knee height makes it a run;
+  // a tired pace under the old 150 steps a minute still counts.
+  const script = scriptMotion([moves.march(5, 9), moves.highKnees(9, 19, { spm: 130 }), moves.march(19, 23)]);
+  for (const [name, r] of Object.entries(runAll(script))) {
+    assert.equal(r.count('run_start'), 1, `${name}: run_start`);
+    const runFrames = r.frames.filter((f) => f.t >= 11000 && f.t <= 18500);
+    const share = runFrames.filter((f) => f.loco.state === 'run').length / runFrames.length;
+    assert.ok(share > 0.95, `${name}: running ${Math.round(share * 100)}% of the interval`);
+  }
+});
+
+test('a brisk march with ordinary knees is not a run (0.8.4)', () => {
+  const script = scriptMotion([moves.march(5, 20, { spm: 135 })]);
+  for (const [name, r] of Object.entries(runAll(script))) assert.equal(r.count('run_start'), 0, `${name}: false run trigger`);
 });

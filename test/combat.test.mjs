@@ -250,7 +250,7 @@ test('done-when, camera: the dummy is struck, taken down, and finished', () => {
   for (const [i, [hand, type]] of [['left', 'straight'], ['right', 'straight'], ['left', 'hook']].entries()) segs.push(moves.punch(6.5 + i * 1.2, hand, type));
   // level change (hips drop 0.3 m and hold), then drive up into a jump: the
   // strongest shot, a 5 s ground and pound burst for the down strikes
-  segs.push(levelShot(11.5, { holdS: 1.5, jump: 0.08 }));
+  segs.push(levelShot(11.5, { holdS: 1.5, jump: 0.14 }));
   segs.push(moves.guard(13.6, 20), moves.punch(14.2, 'left', 'down'), moves.punch(15.2, 'right', 'down'), moves.punch(16.2, 'left', 'down'));
   const script = scriptMotion(segs);
   for (const name of ['portrait', 'landscape', 'livingRoom']) {
@@ -364,7 +364,7 @@ test('fight machine: holding a squat sprawls their shot; a drive up is the shot,
 });
 
 test('level: a squat held for seconds still drives up; a hop off the drive is a jump', () => {
-  const script = scriptMotion([levelShot(6, { holdS: 3 }), levelShot(13, { holdS: 0.5, jump: 0.08 }), moves.squat(18, 0.3, 0.6, 0.6, 2.5)]);
+  const script = scriptMotion([levelShot(6, { holdS: 3 }), levelShot(13, { holdS: 0.5, jump: 0.14 }), moves.squat(18, 0.3, 0.6, 0.6, 2.5)]);
   for (const [name, r] of Object.entries(runAll(script))) {
     const ev = r.events.filter((e) => ['squat', 'drive_up', 'jump'].includes(e.name)).map((e) => e.name);
     assert.deepEqual(ev, ['squat', 'drive_up', 'squat', 'drive_up', 'jump', 'squat'], `${name}`);
@@ -431,7 +431,7 @@ test('bound: out to a side and back is one bound with its side; stepping over an
 });
 
 test('requireJump: a jump from a shallow dip is not a shot; out of a real level change it is (0.8.1)', () => {
-  const script = scriptMotion([levelShot(8, { depth: 0.07, downS: 0.25, holdS: 0.1, upS: 0.22, jump: 0.1 }), levelShot(13, { depth: 0.3, holdS: 0.6, jump: 0.1 })]);
+  const script = scriptMotion([levelShot(8, { depth: 0.07, downS: 0.25, holdS: 0.1, upS: 0.22, jump: 0.14 }), levelShot(13, { depth: 0.3, holdS: 0.6, jump: 0.14 })]);
   for (const name of ['portrait', 'landscape', 'livingRoom']) {
     const d = dummy();
     let log;
@@ -462,4 +462,25 @@ test('demo: jump from standing is only a jump; squat then jump is the shot (0.8.
   demo.press('jump', RE.now());
   assert.deepEqual(log, ['jump', 'jump', 'shot', 'takedown']);
   e.disable_demo();
+});
+
+test('requireJump: a fast drive up that rises onto the toes is not a jump or a shot (0.8.4)', () => {
+  // Mark 10/19: takedowns registered with no jump. A hard drive up overshoots standing by a few
+  // centimeters (up on the toes); only a hop off the floor is a jump.
+  const script = scriptMotion([levelShot(8, { depth: 0.3, holdS: 0.6, upS: 0.2, jump: 0.05 }), levelShot(13, { depth: 0.3, holdS: 0.6, upS: 0.2, jump: 0.07 }), levelShot(18, { depth: 0.3, holdS: 0.6, jump: 0.14 })]);
+  for (const name of ['portrait', 'landscape', 'livingRoom']) {
+    let log;
+    runScript(script, VARIANTS[name], {
+      config: { combat: { fight: { requireJump: true } } },
+      onFrame: (f, engine) => {
+        if (!log) { log = []; for (const n of ['jump', 'shot', 'level_change']) engine.on(n, () => log.push(`${n}@${Math.round(engine.debug().raw.t / 1000)}`)); }
+        if (f.t >= 6000 && engine.mode() !== 'combat') engine.enter_combat(dummy());
+      },
+    });
+    const before = log.filter((x) => +x.split('@')[1] < 18);
+    const after = log.filter((x) => +x.split('@')[1] >= 18);
+    assert.ok(!before.some((x) => x.startsWith('jump') || x.startsWith('shot')), `${name}: up on the toes is not a jump: ${log}`);
+    assert.equal(before.filter((x) => x.startsWith('level_change')).length, 2, `${name}: two level changes: ${log}`);
+    assert.ok(after.some((x) => x.startsWith('shot')), `${name}: a hop out of the squat shoots: ${log}`);
+  }
 });
