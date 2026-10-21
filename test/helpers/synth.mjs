@@ -282,6 +282,25 @@ const PUNCH_PATHS = {
   down: [[0, GUARD], [0.14, DOWN], [0.2, DOWN], [0.45, GUARD]],
 };
 const OVERHEAD = { a: 2.95, f: 0, a2: 3.05, f2: 0 };
+// 0.9.0: punches as people actually throw them on the first camera sessions (Mark 10/20: the
+// warm-up missed hooks and uppercuts): a hook with the elbow lower and less wound out, a short
+// hook, and an uppercut that only dips to the chest
+const LOOSE_PATHS = {
+  hook: [[0, GUARD], [0.1, { a: 1.05, f: 0.35, a2: 1.05, f2: 1.85 }], [0.26, { a: 1.05, f: 0.95, a2: 1.05, f2: 2.45 }], [0.55, GUARD]],
+  shortHook: [[0, GUARD], [0.08, { a: 1.2, f: 0.5, a2: 1.2, f2: 2.0 }], [0.2, { a: 1.2, f: 1.0, a2: 1.2, f2: 2.5 }], [0.45, GUARD]],
+  uppercut: [[0, GUARD], [0.1, { a: 0.2, f: 0.45, a2: 0.4, f2: 1.0 }], [0.24, UPPER_HIGH], [0.5, GUARD]],
+};
+// arms moving the whole time between start and end (a quick ramp in and out from hanging)
+function armsMoving(start, end, fnL, fnR) {
+  return {
+    start, end, kind: 'arms', expected: {},
+    apply(t, m) {
+      const k = Math.max(0, Math.min(1, (t - start) / 0.3, (end - t) / 0.3));
+      if (fnL) m.armL = lerpArm(ARM_REST, fnL(t - start), k);
+      if (fnR) m.armR = lerpArm(ARM_REST, fnR(t - start), k);
+    },
+  };
+}
 
 export const moves = {
   march: (start, end, opts) => stepping(start, end, Object.assign({ spm: 110, thigh: 0.87, swing: 0.35 }, opts)),
@@ -352,6 +371,24 @@ export const moves = {
     },
   }),
   // one punch thrown from the guard at t: type straight | hook | uppercut | down
+  // 0.9.0: a looser punch ('hook', 'shortHook', 'uppercut'; see LOOSE_PATHS)
+  loosePunch: (t0, hand, type) => {
+    const path = armPath(LOOSE_PATHS[type]);
+    const dur = LOOSE_PATHS[type][LOOSE_PATHS[type].length - 1][0];
+    return { start: t0, end: t0 + dur, kind: 'strike', expected: { strike: 1 }, apply(t, m) { m[hand === 'left' ? 'armL' : 'armR'] = path(t - t0); } };
+  },
+  // not punches (Mark 10/20: waving the arms back and forth threw hooks and overhands):
+  // forearms wiping side to side in front of the face, straight arms swinging across the
+  // chest, and bent arms swinging out and in at shoulder height
+  flail: (start, end, hz = 2) => armsMoving(start, end,
+    (u) => ({ a: 0.4, f: 0.9, a2: Math.PI + 0.9 * Math.sin(2 * Math.PI * hz * u), f2: 0.3 }),
+    (u) => ({ a: 0.4, f: 0.9, a2: Math.PI - 0.9 * Math.sin(2 * Math.PI * hz * u), f2: 0.3 })),
+  armSwing: (start, end, hz = 1.2) => armsMoving(start, end,
+    (u) => { const a = 0.4 + Math.sin(2 * Math.PI * hz * u); return { a, f: 1.0, a2: a, f2: 1.0 }; },
+    (u) => { const a = 0.4 - Math.sin(2 * Math.PI * hz * u); return { a, f: 1.0, a2: a, f2: 1.0 }; }),
+  bentSwing: (start, end, hz = 1.5) => armsMoving(start, end,
+    (u) => { const f = 0.3 + 0.8 * (0.5 + 0.5 * Math.sin(2 * Math.PI * hz * u)); return { a: 1.2, f, a2: 1.2, f2: f + 1.5 }; },
+    (u) => { const f = 0.3 + 0.8 * (0.5 - 0.5 * Math.sin(2 * Math.PI * hz * u)); return { a: 1.2, f, a2: 1.2, f2: f + 1.5 }; }),
   punch: (t0, hand, type = 'straight') => {
     const path = armPath(PUNCH_PATHS[type]);
     const dur = PUNCH_PATHS[type][PUNCH_PATHS[type].length - 1][0];

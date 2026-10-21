@@ -484,3 +484,23 @@ test('requireJump: a fast drive up that rises onto the toes is not a jump or a s
     assert.ok(after.some((x) => x.startsWith('shot')), `${name}: a hop out of the squat shoots: ${log}`);
   }
 });
+
+// ---- 0.9.0: strikes from a set hand, judged where they end (Mark 10/20) ----
+const strikeList = (r) => r.events.filter((e) => e.name === 'strike').map((e) => `${e.payload.hand}-${e.payload.type}`);
+
+test('loose hooks and uppercuts register in every framing, with depth squashed too (0.9.0)', () => {
+  const script = scriptMotion([moves.stance(5, 30, 'orthodox'), moves.loosePunch(7, 'left', 'hook'), moves.loosePunch(8.5, 'right', 'hook'), moves.loosePunch(10, 'left', 'shortHook'), moves.loosePunch(11.5, 'right', 'shortHook'), moves.loosePunch(13, 'left', 'uppercut'), moves.loosePunch(14.5, 'right', 'uppercut')]);
+  const want = ['left-hook', 'right-overhand', 'left-hook', 'right-overhand', 'left-uppercut', 'right-uppercut'];
+  for (const [name, r] of Object.entries(runAll(script))) assert.deepEqual(strikeList(r), want, name);
+  for (const [name, r] of Object.entries(runAll(script, { onFrame: squashDepth(0.3) }))) assert.deepEqual(strikeList(r), want, `${name} squashed`);
+});
+
+test('waving, flailing and swinging the arms throw nothing; neither do marching or high knees (0.9.0)', () => {
+  const script = scriptMotion([moves.guard(5, 7), moves.flail(7, 12), moves.armSwing(13, 17), moves.guard(18, 19.2), moves.bentSwing(19, 24), moves.march(25, 30), moves.highKnees(31, 36), moves.wave(37, 40, 'right')]);
+  for (const [name, r] of Object.entries(runAll(script))) assert.deepEqual(strikeList(r), [], name);
+});
+
+test('a double jab and a fast combination all register (0.9.0)', () => {
+  const script = scriptMotion([moves.stance(5, 30, 'orthodox'), moves.punch(7, 'left', 'straight'), moves.punch(7.5, 'left', 'straight'), moves.punch(9, 'left', 'straight'), moves.punch(9.4, 'right', 'straight'), moves.punch(9.8, 'left', 'hook'), moves.punch(10.35, 'right', 'uppercut')]);
+  for (const [name, r] of Object.entries(runAll(script))) assert.deepEqual(strikeList(r), ['left-jab', 'left-jab', 'left-jab', 'right-cross', 'left-hook', 'right-uppercut'], name);
+});
