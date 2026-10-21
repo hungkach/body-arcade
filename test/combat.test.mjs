@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { RE } from './helpers/engine.mjs';
-import { moves, scriptMotion } from './helpers/synth.mjs';
+import { moves, scriptMotion, LOW_GUARD } from './helpers/synth.mjs';
 import { runScript, VARIANTS } from './helpers/run-clip.mjs';
 
 const runAll = (script, opts) => Object.fromEntries(Object.entries(VARIANTS).map(([name, v]) => [name, runScript(script, v, opts)]));
@@ -503,4 +503,87 @@ test('waving, flailing and swinging the arms throw nothing; neither do marching 
 test('a double jab and a fast combination all register (0.9.0)', () => {
   const script = scriptMotion([moves.stance(5, 30, 'orthodox'), moves.punch(7, 'left', 'straight'), moves.punch(7.5, 'left', 'straight'), moves.punch(9, 'left', 'straight'), moves.punch(9.4, 'right', 'straight'), moves.punch(9.8, 'left', 'hook'), moves.punch(10.35, 'right', 'uppercut')]);
   for (const [name, r] of Object.entries(runAll(script))) assert.deepEqual(strikeList(r), ['left-jab', 'left-jab', 'left-jab', 'right-cross', 'left-hook', 'right-uppercut'], name);
+});
+
+// ---- 0.10.0: taught strikes (Mark 10/21: "the coach teaches you how to throw a strike, the
+// system captures it, and that's how it reads it") ----
+// a gym session in the clip: hold the guard (teach_guard), then two reps of each punch while
+// that punch is being taught; plan entries are [startS, endS, role, hand]
+function gym(plan) {
+  return (f, engine) => {
+    const t = f.t / 1000;
+    for (const [a, b, role, hand] of plan) {
+      if (t >= a && t < b && !(engine.__teaching === `${a}`)) { engine.__teaching = `${a}`; if (role === 'guard') engine.teach_guard(); else engine.teach_strike(role, hand); }
+      if (t >= b && engine.__teaching === `${a}`) { engine.__teaching = 'done' + a; engine.teach_stop(); }
+    }
+  };
+}
+const PUNCHES = [['straight', 'left', 'straight'], ['straight', 'right', 'straight'], ['hook', 'left', 'hook'], ['hook', 'right', 'hook'], ['uppercut', 'left', 'uppercut'], ['uppercut', 'right', 'uppercut']];
+function gymClip(from, live = []) {
+  const segs = [moves.holdTurn(5, 70, 25), moves.holdArms(5, 70, from)];
+  const plan = [[6, 8, 'guard']];
+  let t = 8.5;
+  for (const [role, hand, type] of PUNCHES) {
+    plan.push([t, t + 2.6, role, hand]);
+    segs.push(moves.punchFrom(t + 0.4, hand, type, from), moves.punchFrom(t + 1.6, hand, type, from));
+    t += 2.8;
+  }
+  return { segs: segs.concat(live), plan, liveAt: t + 1 };
+}
+
+test('a low guard: the rules read nothing; once the gym learns the guard and each punch, they all count (0.10.0)', () => {
+  const g = gymClip(LOW_GUARD);
+  const live = [];
+  PUNCHES.forEach(([, hand, type], i) => live.push(moves.punchFrom(g.liveAt + i * 1.4, hand, type, LOW_GUARD)));
+  const script = scriptMotion(g.segs.concat(live));
+  const want = ['left-jab', 'right-cross', 'left-hook', 'right-overhand', 'left-uppercut', 'right-uppercut'];
+  for (const name of ['portrait', 'landscape', 'livingRoom']) {
+    const taught = [];
+    const r = runScript(script, VARIANTS[name], { onFrame: gym(g.plan) });
+    r.engine.on && null;
+    const after = r.events.filter((e) => e.name === 'strike' && e.t >= g.liveAt * 1000).map((e) => `${e.payload.hand}-${e.payload.type}`);
+    assert.deepEqual(after, want, `${name}: taught`);
+    const samples = r.events.filter((e) => e.name === 'strike_taught').length;
+    assert.ok(samples >= 12, `${name}: ${samples} samples taught`);
+    const lib = r.engine.strike_samples();
+    assert.ok(lib.guard, `${name}: guard learned`);
+    for (const hand of ['left', 'right']) for (const role of ['straight', 'hook', 'uppercut']) assert.ok(lib[hand][role] >= 2, `${name}: ${hand} ${role} ${lib[hand][role]}`);
+    // the same clip with no gym: the rules never see a set guard this low
+    const plain = runScript(script, VARIANTS[name]);
+    assert.ok(strikeList(plain).length <= 1, `${name}: untaught ${strikeList(plain)}`);
+  }
+});
+
+test('a wide hook the rules call a straight reads as a hook once taught; straights stay straights (0.10.0)', () => {
+  const segs = [moves.stance(5, 40, 'orthodox')];
+  const plan = [[7, 9.6, 'hook', 'left'], [10, 12.6, 'straight', 'left']];
+  segs.push(moves.wideHook(7.4, 'left'), moves.wideHook(8.6, 'left'), moves.punch(10.4, 'left', 'straight'), moves.punch(11.6, 'left', 'straight'));
+  segs.push(moves.wideHook(14, 'left'), moves.punch(15.4, 'left', 'straight'), moves.wideHook(16.8, 'left'));
+  const script = scriptMotion(segs);
+  for (const name of ['portrait', 'landscape', 'livingRoom']) {
+    const r = runScript(script, VARIANTS[name], { onFrame: gym(plan) });
+    assert.deepEqual(r.events.filter((e) => e.name === 'strike' && e.t >= 13500).map((e) => `${e.payload.hand}-${e.payload.type}`), ['left-hook', 'left-jab', 'left-hook'], name);
+    const plain = runScript(script, VARIANTS[name]);
+    assert.ok(!plain.events.some((e) => e.name === 'strike' && e.t >= 13500 && e.payload.type === 'hook'), `${name}: the rules alone call it a hook: ${strikeList(plain)}`);
+  }
+});
+
+test('with taught samples, waving and swinging the arms still throw nothing (0.10.0)', () => {
+  const g = gymClip({ a: 0.25, f: 0.55, a2: Math.PI + 0.55, f2: 0.25 });
+  const at = g.liveAt;
+  const script = scriptMotion(g.segs.concat([moves.flail(at, at + 5), moves.armSwing(at + 6, at + 10), moves.bentSwing(at + 11, at + 15), moves.wave(at + 16, at + 19, 'right')]));
+  for (const name of ['portrait', 'landscape', 'livingRoom']) {
+    const r = runScript(script, VARIANTS[name], { onFrame: gym(g.plan) });
+    assert.deepEqual(r.events.filter((e) => e.name === 'strike' && e.t >= at * 1000).map((e) => `${e.payload.hand}-${e.payload.type}`), [], name);
+  }
+});
+
+test('taught samples are saved with the profile and kept by the next calibration (0.10.0)', () => {
+  const g = gymClip(LOW_GUARD);
+  const r = runScript(scriptMotion(g.segs), VARIANTS.portrait, { onFrame: gym(g.plan) });
+  const cal = r.engine.debug().cal;
+  const saved = RE.profiles.load(cal.preset, cal.orientation);
+  assert.ok(saved && saved.strikes && saved.strikes.left.hook.length >= 2 && saved.guardPos && saved.guardPos.left, 'saved');
+  r.engine.forget_strikes();
+  assert.equal(r.engine.strike_samples().left.hook, 0);
 });

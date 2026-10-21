@@ -290,6 +290,10 @@ const LOOSE_PATHS = {
   shortHook: [[0, GUARD], [0.08, { a: 1.2, f: 0.5, a2: 1.2, f2: 2.0 }], [0.2, { a: 1.2, f: 1.0, a2: 1.2, f2: 2.5 }], [0.45, GUARD]],
   uppercut: [[0, GUARD], [0.1, { a: 0.2, f: 0.45, a2: 0.4, f2: 1.0 }], [0.24, UPPER_HIGH], [0.5, GUARD]],
 };
+// 0.10.0: a tired, low guard (fists at the belly, elbows down; under the rules' guard height), and
+// a wide hook thrown nearly straight-armed (the rules call it a straight)
+export const LOW_GUARD = { a: 0.1, f: 0.3, a2: Math.PI + 0.4, f2: 1.9 };
+const WIDE_HOOK = [[0, GUARD], [0.12, { a: Math.PI / 2 - 0.1, f: 0.25, a2: Math.PI / 2 - 0.1, f2: 0.5 }], [0.28, { a: Math.PI / 2 - 0.1, f: 1.2, a2: Math.PI / 2 - 0.1, f2: 1.5 }], [0.55, GUARD]];
 // arms moving the whole time between start and end (a quick ramp in and out from hanging)
 function armsMoving(start, end, fnL, fnR) {
   return {
@@ -371,6 +375,18 @@ export const moves = {
     },
   }),
   // one punch thrown from the guard at t: type straight | hook | uppercut | down
+  // 0.10.0: a textbook punch thrown from (and back to) another guard pose, e.g. LOW_GUARD
+  punchFrom: (t0, hand, type, from) => {
+    const keys = PUNCH_PATHS[type].map(([k, p], i, all) => [k, i === 0 || i === all.length - 1 ? from : p]);
+    const path = armPath(keys), dur = keys[keys.length - 1][0];
+    return { start: t0, end: t0 + dur, kind: 'strike', expected: { strike: 1 }, apply(t, m) { m[hand === 'left' ? 'armL' : 'armR'] = path(t - t0); } };
+  },
+  wideHook: (t0, hand) => {
+    const path = armPath(WIDE_HOOK), dur = WIDE_HOOK[WIDE_HOOK.length - 1][0];
+    return { start: t0, end: t0 + dur, kind: 'strike', expected: { strike: 1 }, apply(t, m) { m[hand === 'left' ? 'armL' : 'armR'] = path(t - t0); } };
+  },
+  // both arms held in a pose (e.g. LOW_GUARD) between start and end
+  holdArms: (start, end, pose) => armPose(start, end, { left: pose, right: pose, rampS: 0.2 }),
   // 0.9.0: a looser punch ('hook', 'shortHook', 'uppercut'; see LOOSE_PATHS)
   loosePunch: (t0, hand, type) => {
     const path = armPath(LOOSE_PATHS[type]);
