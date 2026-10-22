@@ -104,8 +104,17 @@ function pose3d(m, B = makeBody()) {
     pts[wr] = [pts[el][0] + FOREARM * d[0], pts[el][1] + FOREARM * d[1], pts[el][2] + FOREARM * d[2]];
   }
 
-  for (const [th, lift, knee, ankle] of [[m.thighL, m.liftL, 25, 27], [m.thighR, m.liftR, 26, 28]]) {
-    if (th != null) {
+  for (const [th, lift, knee, ankle, hip, across, shin, side] of [[m.thighL, m.liftL, 25, 27, 23, m.acrossL, m.shinL, 1], [m.thighR, m.liftR, 26, 28, 24, m.acrossR, m.shinR, -1]]) {
+    if (th != null && (across || shin)) {
+      // 0.11.0 kicks: the thigh swings across the body (across, radians) as it flexes (th), and
+      // the shin extends forward from the knee (shin: 0 hangs down, pi/2 points at the camera)
+      const h = pts[hip], ax = across || 0, sh = shin || 0;
+      const u = [-side * Math.sin(ax), -Math.cos(th) * Math.cos(ax), -Math.sin(th) * Math.cos(ax)];
+      pts[knee] = [h[0] + THIGH * u[0], h[1] + THIGH * u[1], h[2] + THIGH * u[2]];
+      const d = [-side * Math.sin(ax) * 0.5, -Math.cos(sh), -Math.sin(sh)];
+      const n = Math.hypot(...d);
+      pts[ankle] = [pts[knee][0] + (SHIN * d[0]) / n, pts[knee][1] + (SHIN * d[1]) / n, pts[knee][2] + (SHIN * d[2]) / n];
+    } else if (th != null) {
       const ky = HIP_Y - THIGH * Math.cos(th), kz = -THIGH * Math.sin(th);
       pts[knee] = [pts[knee][0], ky, kz];
       pts[ankle] = [pts[ankle][0], ky - SHIN, kz];
@@ -385,6 +394,37 @@ export const moves = {
     const path = armPath(WIDE_HOOK), dur = WIDE_HOOK[WIDE_HOOK.length - 1][0];
     return { start: t0, end: t0 + dur, kind: 'strike', expected: { strike: 1 }, apply(t, m) { m[hand === 'left' ? 'armL' : 'armR'] = path(t - t0); } };
   },
+  // 0.11.0 kicks, one leg while the other stays planted (leg: 'left' | 'right'):
+  // a teep: the knee comes up to the chest and the foot pushes out at the camera
+  teep: (t0, leg, dur = 0.7) => ({
+    start: t0, end: t0 + dur, kind: 'kick', expected: { teep: 1 },
+    apply(t, m) {
+      const u = (t - t0) / dur, k = Math.sin(Math.PI * Math.min(1, Math.max(0, u)));
+      const ext = Math.max(0, Math.sin(Math.PI * Math.min(1, Math.max(0, (u - 0.25) / 0.5))));
+      m[leg === 'left' ? 'thighL' : 'thighR'] = 1.35 * k;
+      m[leg === 'left' ? 'shinL' : 'shinR'] = 0.2 + 1.2 * ext;
+      m.lean = (m.lean || 0);
+    },
+  }),
+  // a rear low kick (Dutch style): the hips turn and the rear leg swings across at thigh height
+  lowKick: (t0, leg, dur = 0.65) => ({
+    start: t0, end: t0 + dur, kind: 'kick', expected: { low_kick: 1 },
+    apply(t, m) {
+      const u = (t - t0) / dur, k = Math.sin(Math.PI * Math.min(1, Math.max(0, u)));
+      m[leg === 'left' ? 'thighL' : 'thighR'] = 0.75 * k;
+      m[leg === 'left' ? 'acrossL' : 'acrossR'] = 0.75 * k;
+      m[leg === 'left' ? 'shinL' : 'shinR'] = 0.6 * k;
+      m.yaw = (m.yaw || 0) + (leg === 'right' ? -1 : 1) * 0.6 * k;
+    },
+  }),
+  // a knee: the rear knee driven straight up
+  knee: (t0, leg, dur = 0.5) => ({
+    start: t0, end: t0 + dur, kind: 'kick', expected: { knee: 1 },
+    apply(t, m) {
+      const u = (t - t0) / dur, k = Math.sin(Math.PI * Math.min(1, Math.max(0, u)));
+      m[leg === 'left' ? 'thighL' : 'thighR'] = 1.45 * k;
+    },
+  }),
   // both arms held in a pose (e.g. LOW_GUARD) between start and end
   holdArms: (start, end, pose) => armPose(start, end, { left: pose, right: pose, rampS: 0.2 }),
   // 0.9.0: a looser punch ('hook', 'shortHook', 'uppercut'; see LOOSE_PATHS)

@@ -587,3 +587,31 @@ test('taught samples are saved with the profile and kept by the next calibration
   r.engine.forget_strikes();
   assert.equal(r.engine.strike_samples().left.hook, 0);
 });
+
+// ---- 0.11.0: kicks and knees, read from the thigh and the knee (the feet are often out of view) ----
+const kickList = (r) => r.events.filter((e) => ['teep', 'low_kick', 'knee'].includes(e.name)).map((e) => `${e.payload.leg}-${e.name}`);
+
+test('a lead teep, a rear low kick and a rear knee read in every framing, both stances (0.11.0)', () => {
+  const orth = scriptMotion([moves.stance(5, 30, 'orthodox'), moves.teep(7, 'left'), moves.lowKick(9, 'right'), moves.knee(11, 'right'), moves.lowKick(13, 'right')]);
+  const south = scriptMotion([moves.stance(5, 30, 'southpaw'), moves.teep(7, 'right'), moves.lowKick(9, 'left'), moves.knee(11, 'left')]);
+  for (const [name, r] of Object.entries(runAll(orth))) {
+    assert.deepEqual(kickList(r), ['left-teep', 'right-low_kick', 'right-knee', 'right-low_kick'], `orthodox ${name}`);
+    for (const e of r.events.filter((x) => ['teep', 'low_kick', 'knee'].includes(x.name))) assert.ok(e.payload.power >= 0.5 && e.payload.power <= 1.5 && e.payload.pitch > 25, `${name}: ${JSON.stringify(e.payload)}`);
+  }
+  for (const [name, r] of Object.entries(runAll(south))) assert.deepEqual(kickList(r), ['right-teep', 'left-low_kick', 'left-knee'], `southpaw ${name}`);
+});
+
+test('marching, high knees, a squat, a bound and punches kick nothing (0.11.0)', () => {
+  const script = scriptMotion([moves.march(5, 12), moves.highKnees(13, 20), moves.march(21, 25, { spm: 90 }), moves.squat(27), moves.bound(31, 'left'), moves.stance(33, 40, 'orthodox'), moves.punch(35, 'left', 'straight'), moves.punch(36.4, 'right', 'hook')]);
+  for (const [name, r] of Object.entries(runAll(script))) assert.deepEqual(kickList(r), [], name);
+});
+
+test('demo: teep, low kick and knee buttons emit the camera events (0.11.0)', () => {
+  const e = RE.create({ headless: true });
+  const log = [];
+  for (const n of ['teep', 'low_kick', 'knee']) e.on(n, (p) => log.push(`${p.leg}-${n}`));
+  e.enable_demo(null);
+  const demo = e.debug().demo;
+  for (const b of ['teep', 'low_kick', 'knee']) demo.press(b, RE.now());
+  assert.deepEqual(log, ['left-teep', 'right-low_kick', 'right-knee']);
+});

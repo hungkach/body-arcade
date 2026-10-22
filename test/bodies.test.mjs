@@ -49,3 +49,16 @@ for (const [body, b] of Object.entries(BODIES)) {
     }
   });
 }
+
+// 0.11.0: the kicks for every build, in the same three framings
+const KICKS = scriptMotion([moves.stance(5, 22, 'orthodox'), moves.teep(7, 'left'), moves.lowKick(9.5, 'right'), moves.knee(12, 'right')]);
+test('every body: the lead teep, the rear low kick and the rear knee (0.11.0)', () => {
+  for (const [body, b] of Object.entries(BODIES)) {
+    for (const name of ['portrait', 'landscape', 'livingRoom']) {
+      const v = Object.assign({}, VARIANTS[name], { body: b, distance: (VARIANTS[name].distance || 2) * (b.scale || 1) });
+      const r = runScript(KICKS, v);
+      const got = r.events.filter((e) => ['teep', 'low_kick', 'knee'].includes(e.name)).map((e) => `${e.payload.leg}-${e.name}`);
+      assert.deepEqual(got, ['left-teep', 'right-low_kick', 'right-knee'], `${body} ${name}`);
+    }
+  }
+});
