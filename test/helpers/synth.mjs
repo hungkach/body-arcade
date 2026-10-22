@@ -22,6 +22,7 @@
 // (the player faces the camera, so their right side is on camera -x).
 const BASE = {
   0: [0, 1.65, -0.1],       // nose, in front of the shoulder plane
+  7: [0.075, 1.66, 0.02], 8: [-0.075, 1.66, 0.02], // ears, behind the nose (0.12.0: a side camera reads facing from them)
   11: [0.2, 1.45, 0], 12: [-0.2, 1.45, 0],   // shoulders L, R
   13: [0.26, 1.16, 0], 14: [-0.26, 1.16, 0], // elbows
   15: [0.28, 0.88, 0], 16: [-0.28, 0.88, 0], // wrists
@@ -29,7 +30,7 @@ const BASE = {
   25: [0.14, 0.5, 0], 26: [-0.14, 0.5, 0],   // knees
   27: [0.14, 0.08, 0], 28: [-0.14, 0.08, 0], // ankles
 };
-const UPPER = new Set([0, 11, 12, 13, 14, 15, 16]);
+const UPPER = new Set([0, 7, 8, 11, 12, 13, 14, 15, 16]);
 const HIP_Y = 0.95;
 const THIGH = 0.45, SHIN = 0.42, UPPER_ARM = 0.29, FOREARM = 0.28;
 
@@ -52,6 +53,7 @@ function makeBody(body) {
   const hipY = 0.95 * Lg, shY = hipY + 0.5 * Tz, sx = 0.2 * sw;
   const b = {
     0: [0, shY + 0.2 * Tz, -0.1],
+    7: [0.075, shY + 0.21 * Tz, 0.02], 8: [-0.075, shY + 0.21 * Tz, 0.02],
     11: [sx, shY, 0], 12: [-sx, shY, 0],
     13: [sx + 0.06, shY - 0.29 * A, 0], 14: [-sx - 0.06, shY - 0.29 * A, 0],
     15: [sx + 0.08, shY - 0.57 * A, 0], 16: [-sx - 0.08, shY - 0.57 * A, 0],
@@ -172,7 +174,7 @@ function gaussian(rand) {
 }
 
 // opts: {w, h, f (px), distance (m), camHeight (m), offsetX (px),
-//        mirrored, fps, seconds, noisePx, worldNoise (m), seed, motion}
+//        mirrored, fps, seconds, noisePx, worldNoise (m), seed, motion, camYaw (radians)}
 export function synthClip(opts) {
   const o = Object.assign({ f: 900, distance: 2.0, camHeight: 1.0, offsetX: 0, mirrored: false, fps: 30, seconds: 25, noisePx: 1.2, worldNoise: 0.008, seed: 7, motion: motionAt }, opts);
   const gauss = gaussian(mulberry32(o.seed));
@@ -184,6 +186,12 @@ export function synthClip(opts) {
   for (let k = 0; k < n; k++) {
     const t = k / o.fps;
     const p3 = pose3d(o.motion(t), B);
+    // camYaw (0.12.0): the camera swung around the player about the vertical through the hips, in
+    // radians (-pi/2: at the player's right, a side camera; +pi/2 at their left)
+    if (o.camYaw) {
+      const cx = (p3[23][0] + p3[24][0]) / 2, cz = (p3[23][2] + p3[24][2]) / 2, c = Math.cos(o.camYaw), sn = Math.sin(o.camYaw);
+      for (const k of Object.keys(p3)) { const q = p3[k], x = q[0] - cx, z = q[2] - cz; p3[k] = [cx + x * c + z * sn, q[1], cz - x * sn + z * c]; }
+    }
     // MediaPipe world landmarks: meters, origin at the hip midpoint, y down
     const hx = (p3[23][0] + p3[24][0]) / 2, hy = (p3[23][1] + p3[24][1]) / 2, hz = (p3[23][2] + p3[24][2]) / 2;
     const lm = [];
