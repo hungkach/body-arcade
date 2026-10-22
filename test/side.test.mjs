@@ -113,3 +113,88 @@ test('punches taught with a side camera are kept apart from the main camera set'
   assert.ok(!cal.strikes, 'the main camera set untouched');
   assert.equal(r.engine.strike_samples().side, true);
 });
+
+// 0.12.1 (Mark: "wire the side cam into teeps and level changes too"): the side camera's thigh
+// angles and hip drop take the place of the main camera's in the signals the steps, kicks and
+// level changes read.
+// the main camera loses the legs' depth (a thigh lifting toward it reads as hanging straight down)
+const flatLegs = (f) => { for (const [h, k, a] of [[23, 25, 27], [24, 26, 28]]) for (const i of [k, a]) f.wl[i][2] = f.wl[h][2]; };
+const kicked = (r) => r.events.filter((e) => ['teep', 'low_kick', 'knee'].includes(e.name)).map((e) => `${e.payload.leg}-${e.name}`);
+function legFeed(script, opts = {}) {
+  const side = synthClip({ w: 720, h: 1280, f: 800, distance: 2.4, camHeight: 1.0, seed: 77, camYaw: opts.camYaw ?? -Math.PI / 2, motion: script.motion, seconds: script.seconds });
+  let i = 0;
+  return (f, engine) => {
+    if (opts.main) opts.main(f);
+    const k = i++ - 2;
+    if (k < 0) return;
+    if (k === 0) engine.side_sync(0);
+    const S = side.frames[k].lm, sw = opts.swap ? Object.assign(S.slice(), { 7: S[8], 8: S[7], 11: S[12], 12: S[11], 13: S[14], 14: S[13], 15: S[16], 16: S[15], 23: S[24], 24: S[23], 25: S[26], 26: S[25] }) : S;
+    engine.side_feed(RE.sidePack(Object.assign({}, side.frames[k], { lm: sw })), f.t);
+  };
+}
+const KICKS = scriptMotion([moves.march(5, 9), moves.stance(10, 21, 'orthodox'), moves.teep(12, 'left'), moves.lowKick(14.5, 'right'), moves.knee(17, 'right')]);
+
+test('kicks: with the main camera\'s leg depth flat, the side camera reads the teep, the low kick and the knee (0.12.1)', () => {
+  const off = runScript(KICKS, VARIANTS.portrait, { onFrame: flatLegs });
+  assert.notDeepEqual(kicked(off), ['left-teep', 'right-low_kick', 'right-knee'], `without the side camera: ${kicked(off)}`);
+  for (const [name, v] of Object.entries(VARIANTS)) {
+    const r = runScript(KICKS, v, { onFrame: legFeed(KICKS, { main: flatLegs }) });
+    assert.deepEqual(kicked(r), ['left-teep', 'right-low_kick', 'right-knee'], name);
+  }
+  for (const [tag, o] of [['swapped', { swap: true }], ['left side', { camYaw: Math.PI / 2 }]]) {
+    const r = runScript(KICKS, VARIANTS.portrait, { onFrame: legFeed(KICKS, Object.assign({ main: flatLegs }, o)) });
+    assert.deepEqual(kicked(r), ['left-teep', 'right-low_kick', 'right-knee'], tag);
+  }
+});
+
+test('level changes: with the main camera blind to the hip drop, the side camera reads the squats and the shot (0.12.1)', () => {
+  const script = scriptMotion([moves.stance(5, 30, 'orthodox'), moves.squat(8, 0.3, 0.6, 0.6, 2.0), moves.squat(13, 0.3, 0.6, 0.6, 2.0), moves.shot(18, 0.3)]);
+  // the main camera's hips and shoulders held where they stood
+  let first = null;
+  const frozen = (f) => { if (!first) first = f.lm.map((p) => p.slice()); for (const i of [11, 12, 23, 24]) f.lm[i][1] = first[i][1]; };
+  const off = runScript(script, VARIANTS.portrait, { onFrame: frozen });
+  assert.equal(off.count('squat'), 0, 'the test means something');
+  for (const name of ['portrait', 'landscape', 'livingRoom']) {
+    const r = runScript(script, VARIANTS[name], { onFrame: legFeed(script, { main: frozen }) });
+    assert.equal(r.count('squat'), 3, `${name}: squats ${r.count('squat')}`);
+    assert.equal(r.count('drive_up'), 1, `${name}: drive up`);
+  }
+});
+
+test('steps and runs count the same with a side camera on (0.12.1)', () => {
+  const script = scriptMotion([moves.march(5, 15), moves.highKnees(16, 24)]);
+  for (const name of ['portrait', 'landscape']) {
+    const a = runScript(script, VARIANTS[name]);
+    const b = runScript(script, VARIANTS[name], { onFrame: legFeed(script, { main: flatLegs }) });
+    assert.ok(Math.abs(a.count('step') - b.count('step')) <= 1, `${name}: ${a.count('step')} vs ${b.count('step')}`);
+    assert.equal(b.count('run_start'), 1, `${name}: run`);
+    assert.deepEqual(kicked(b), [], `${name}: no kicks from marching`);
+  }
+});
+
+// the game's takedown is a jump out of a level change: the jump has to read from the side too
+function levelShot(start, { depth = 0.3, downS = 0.35, holdS = 1, upS = 0.25, jump = 0 } = {}) {
+  const e = (x) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
+  const upAt = start + downS + holdS;
+  return {
+    start, end: upAt + upS + 0.5, kind: 'level', expected: {},
+    apply(t, m) {
+      let d;
+      if (t < start + downS) d = depth * e((t - start) / downS);
+      else if (t < upAt) d = depth;
+      else if (t < upAt + upS) d = depth - (depth + jump) * e((t - upAt) / upS);
+      else d = -jump * (1 - e((t - upAt - upS) / 0.3));
+      m.drop = (m.drop || 0) + d;
+    },
+  };
+}
+test('the takedown: a jump out of a level change reads through the side camera alone (0.12.1)', () => {
+  const script = scriptMotion([moves.stance(5, 20, 'orthodox'), levelShot(8, { holdS: 0.5, jump: 0.14 }), levelShot(13, { holdS: 0.5 })]);
+  let first = null;
+  const frozen = (f) => { if (!first) first = f.lm.map((p) => p.slice()); for (const i of [11, 12, 23, 24]) f.lm[i][1] = first[i][1]; };
+  for (const name of ['portrait', 'landscape']) {
+    const r = runScript(script, VARIANTS[name], { onFrame: legFeed(script, { main: frozen }) });
+    const ev = r.events.filter((e) => ['squat', 'drive_up', 'jump'].includes(e.name)).map((e) => e.name);
+    assert.deepEqual(ev, ['squat', 'drive_up', 'jump', 'squat', 'drive_up'], name);
+  }
+});
