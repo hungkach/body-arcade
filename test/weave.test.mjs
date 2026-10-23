@@ -63,3 +63,13 @@ test('every body build weaves both ways', () => {
     }
   }
 });
+
+test('in a fight: a jump with the head ducked straight down (6 o\'clock) is the double too (0.13.1)', () => {
+  const script = scriptMotion([moves.stance(5, 14, 'orthodox'), moves.weave(8, 'left', { angle: 0, jumpAt: 0.5 })]);
+  for (const name of ['portrait', 'landscape']) {
+    let entered = false;
+    const r = runScript(script, VARIANTS[name], { config: { combat: { fight: { requireJump: true } } }, onFrame: (f, engine) => { if (!entered && f.t > 6000) { entered = true; engine.enter_combat({ open: () => true }); } } });
+    assert.equal(r.count('shot'), 1, `${name}: shot`);
+    assert.equal(r.count('weave'), 0, `${name}: not a weave`);
+  }
+});
