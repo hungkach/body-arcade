@@ -353,6 +353,34 @@ export const moves = {
     start, end, kind: 'lean', expected: { ['lean_' + side]: 1 },
     apply(t, m) { m.lean = (side === 'right' ? 1 : -1) * angle * envelope(t, start, end, (end - start) / 2.5); },
   }),
+  // a weave (0.13.0): the head slips to one side (inS), drops through a U under to the other side
+  // (uS, depth m at the bottom), then comes back to the middle (outS). jumpAt (0..1 along the U):
+  // drive up out of it into a hop of jump m instead of finishing the U
+  weave: (start, from, opts = {}) => {
+    const o = Object.assign({ angle: 0.35, depth: 0.12, inS: 0.35, uS: 0.8, outS: 0.4, jumpAt: null, jump: 0.14 }, opts);
+    const sgn = from === 'right' ? 1 : -1, sm = (x) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
+    const end = start + o.inS + o.uS + o.outS;
+    return {
+      start, end, kind: 'weave', expected: { weave: o.jumpAt == null ? 1 : 0 },
+      apply(t, m) {
+        const u = t - start;
+        let lean = 0, drop = 0;
+        if (u < o.inS) lean = sgn * o.angle * sm(u / o.inS);
+        else if (u < o.inS + o.uS) {
+          const k = (u - o.inS) / o.uS;
+          if (o.jumpAt != null && k > o.jumpAt) {
+            // up out of the dip into a hop, the head back over the hips
+            const j = (u - o.inS - o.jumpAt * o.uS) / 0.3;
+            const base = o.depth * Math.sin(Math.PI * o.jumpAt);
+            lean = sgn * o.angle * Math.cos(Math.PI * o.jumpAt) * (1 - sm(j));
+            drop = j < 1 ? base - (base + o.jump) * sm(j) : -o.jump * (1 - sm((j - 1) * 1.5));
+          } else { lean = sgn * o.angle * Math.cos(Math.PI * k); drop = o.depth * Math.sin(Math.PI * k); }
+        } else if (o.jumpAt == null) lean = -sgn * o.angle * (1 - sm((u - o.inS - o.uS) / o.outS));
+        m.lean = (m.lean || 0) + lean;
+        m.drop = (m.drop || 0) + drop;
+      },
+    };
+  },
   point: (start, end, side) => armPose(start, end, { [side]: POINT, expected: { ['point_' + side]: 1 } }),
   turnAround: (start, end) => armPose(start, end, { left: OVERHEAD, right: OVERHEAD, rampS: 0.35, expected: { turn_around: 1 } }),
   // upper arm out, forearm up and swaying side to side at hz

@@ -32,7 +32,7 @@
   #stats th:first-child, #stats td:first-child { text-align: left; }
 </style>
 <script>
-/* rep-engine 0.12.2, inlined by build/build.mjs. Edit engine/, not this copy. */
+/* rep-engine 0.13.0, inlined by build/build.mjs. Edit engine/, not this copy. */
 // ---- engine/core.js ----
 // rep-engine core: namespace, landmark indices, small shared helpers.
 // Every engine file is a plain script that adds to globalThis.RepEngine,
@@ -378,6 +378,11 @@
           back: 0.4,     // S: and comes back within this of the middle
           backMs: 900,   // within this long of its furthest point
         },
+        // head movement (0.13.0): a weave is a U from one side, down, up to the other side.
+        // side (S): the nose this far across from the hips (a slip reads from 0.25); low (T):
+        // the shoulders this far below standing; legMs: each half of the U; maxMs: the whole;
+        // holdMs: still weaving this long after it ends
+        weave: { side: 0.3, low: 0.15, legMs: 700, maxMs: 1600, holdMs: 400 },
         level: {
           squat: 0.3,      // T level drop that is a squat (spec 0.35; 0.4.2 eased for a fighting crouch)
           reset: 0.15,     // T: re-arms above this (spec)
@@ -389,6 +394,7 @@
         },
         fight: {
           jumpWaitMs: 300,   // after a drive up, how long a jump can still add to the shot
+          weaveJumpMs: 300,  // 0.13.0: a jump while weaving, or this long after, is the shot
           // 0.7.0 (Mark: the squat is the level change, the jump is the takedown): with
           // requireJump only a jump off the drive up shoots; a drive up with no jump inside
           // requireJumpWaitMs is just a 'level_change'
@@ -420,6 +426,7 @@
         runCadence: 170,
         cadenceWindowMs: 3000,
         squatHoldMs: 1500, // the demo squat button holds a squat this long (touch cannot hold a crouch)
+        weaveMs: 900,      // 0.13.0: a demo weave counts as weaving this long (a jump in it is the shot)
       },
       // a second camera at the side (0.12.0, side.js): a sample is fresh for maxAgeMs; without
       // a clock sync it is taken to be leadMs older than its arrival (the link's delay); landmarks below
@@ -1407,7 +1414,7 @@
   const RE = g.RepEngine;
   const L = RE.LM;
 
-  for (const name of ['strike', 'squat', 'drive_up', 'jump', 'slip', 'stance', 'bound', 'teep', 'low_kick', 'knee']) RE.detectors.add(name);
+  for (const name of ['strike', 'squat', 'drive_up', 'jump', 'slip', 'stance', 'bound', 'teep', 'low_kick', 'knee', 'weave']) RE.detectors.add(name);
 
   const sub = (a, b) => ({ x: a.x - b.x, y: a.y - b.y, z: a.z - b.z });
   const dot = (a, b) => a.x * b.x + a.y * b.y + a.z * b.z;
@@ -1838,6 +1845,49 @@
     }
   }
 
+  // Head movement (0.13.0, Mark: "like Fight Night Champion: the head moves in an arc; left and
+  // right are slips, straight down is a duck, a U is a weave. While weaving it is a level change
+  // and you can jump at any time for a double"). The head is the nose across from the hip
+  // midpoint (S, + the player's right, as the slip reads it) and the shoulders' drop below
+  // standing (T; the hips when the shoulders are hidden). out.head { x, y } every frame.
+  //   zones    side: |x| at least weave.side and y under weave.low; low: y at least weave.low
+  //   'weave'  from one side, down through low (within legMs of leaving that side), up to the
+  //            other side (within legMs of the bottom), all within maxMs: { from, to, depth (T,
+  //            the lowest point), width (S, side to side), ms }
+  //   out.weaving  from the dip out of a side until holdMs after the other side is reached:
+  //            the fight machine counts it as a level change (a jump in it is the shot)
+  class WeaveDetector {
+    constructor(cfg) { this.c = cfg.combat.weave; this.side = null; this.dip = null; this.until = -Infinity; }
+    update(ctx, out) {
+      const t = ctx.t, c = this.c, sig = ctx.sig, b = sig.body;
+      out.weaving = t < this.until;
+      if (ctx.upperLow || !b) { out.head = null; this.dip = null; return; }
+      const x = b.nose.x - b.hMid.x;
+      const y = sig.shoulderDrop != null && sig.upperSeen ? sig.shoulderDrop : sig.levelDrop != null ? sig.levelDrop : 0;
+      out.head = { x, y };
+      const low = y >= c.low, at = !low && Math.abs(x) >= c.side ? (x < 0 ? 'left' : 'right') : null;
+      if (at) {
+        const d = this.dip;
+        // reaching the other side out of a dip: the weave
+        if (d && at !== d.from && t - d.bottomAt <= c.legMs && t - d.fromAt <= c.maxMs) {
+          out.events.push(['weave', { from: d.from, to: at, depth: d.depth, width: Math.abs(x - d.fromX), ms: Math.round(t - d.fromAt) }]);
+          this.until = t + c.holdMs;
+          out.weaving = true;
+        }
+        this.dip = null;
+        this.side = { at, t, x };
+      } else if (low) {
+        if (!this.dip && this.side && t - this.side.t <= c.legMs) this.dip = { from: this.side.at, fromAt: this.side.t, fromX: this.side.x, depth: y, bottomAt: t };
+        if (this.dip) {
+          if (y > this.dip.depth) this.dip.depth = y;
+          this.dip.bottomAt = t;
+          this.until = Math.max(this.until, t + c.holdMs);
+          out.weaving = true;
+        }
+      } else if (this.dip && t - this.dip.bottomAt > c.legMs) this.dip = null;
+    }
+  }
+
   // Level changes, from sig.levelDrop (the hips, or the shoulders when the
   // hips are hidden; knees are not needed, a squat in knees-up framing pushes
   // them out of the frame):
@@ -2095,7 +2145,7 @@
     }
   }
 
-  RE.makeCombatDetectors = (cfg) => [new ArmPose(cfg), new GuardDetector(cfg), new StanceDetector(cfg), new StrikeDetector(cfg), new SlipDetector(cfg), new LevelDetector(cfg), new BoundDetector(cfg), new KickDetector(cfg)];
+  RE.makeCombatDetectors = (cfg) => [new ArmPose(cfg), new GuardDetector(cfg), new StanceDetector(cfg), new StrikeDetector(cfg), new SlipDetector(cfg), new LevelDetector(cfg), new BoundDetector(cfg), new KickDetector(cfg), new WeaveDetector(cfg)];
 
   // Fight state machine (spec update_combat; reworked in 0.5.0 after Mark's
   // camera test). Runs only in combat mode. target, from enter_combat, all
@@ -2118,7 +2168,7 @@
   // leaves combat mode).
   class Combat {
     constructor(cfg) { this.c = cfg.combat.fight; this.reset(); }
-    reset() { this.phase = 'standing'; this.drive = null; this.topUntil = 0; this.runSince = null; this.target = null; this.sprawled = false; }
+    reset() { this.phase = 'standing'; this.drive = null; this.topUntil = 0; this.runSince = null; this.target = null; this.sprawled = false; this.weaveUntil = -Infinity; }
     enter(target) { this.reset(); this.target = target || null; }
     gnpMs(power) {
       const [lo, hi] = this.c.gnpMs;
@@ -2149,10 +2199,18 @@
           this.drive = { t, speed: payload.speed || 0, jumped: false };
           if (!this.c.requireJump) out.push(['shot', { speed: payload.speed || 0 }]);
         }
+      } else if (name === 'jump' && this.phase === 'standing' && t <= this.weaveUntil && !(tg.shooting && tg.shooting()) && (!tg.open || tg.open())) {
+        // 0.13.0: out of a weave (a level change in motion) a jump is the double, at full drive
+        this.drive = { t, speed: this.c.refRise, jumped: true, weave: true };
+        out.push(['shot', { speed: this.c.refRise, weave: true }]);
+        out.push(...this.resolve(t));
       } else if (name === 'jump' && this.phase === 'drive') {
         this.drive.jumped = true;
         if (this.c.requireJump) out.push(['shot', { speed: this.drive.speed }]);
         out.push(...this.resolve(t));
+      } else if (name === 'weave') {
+        // a finished weave keeps the jump window open a little past its end (touch weaves too)
+        this.weaveUntil = Math.max(this.weaveUntil, t + this.c.weaveJumpMs + 400);
       } else if (name === 'strike' && this.phase === 'top') {
         out.push(['down_strike', { hand: payload.hand, power: payload.power }]);
       } else if (name === 'run_start') {
@@ -2168,6 +2226,7 @@
       const out = [];
       const tg = this.target || {};
       const shooting = !!(tg.shooting && tg.shooting());
+      if (sig.weaving) this.weaveUntil = t + this.c.weaveJumpMs;
       if (!shooting) this.sprawled = false;
       else if (this.phase === 'standing' && sig.level_low && !this.sprawled) { this.sprawled = true; out.push(['sprawl', { held: true }]); }
       if (this.phase === 'drive' && this.c.requireJump && t - this.drive.t >= this.c.requireJumpWaitMs) {
@@ -3155,6 +3214,13 @@
           this.emit('slip', { side });
           break;
         }
+        // 0.13.0: a weave under to one side: a level change in motion (a jump in it is the shot)
+        case 'weave_left': case 'weave_right': {
+          const to = action === 'weave_left' ? 'left' : 'right';
+          this.weaveUntil = now + this.cfg.weaveMs;
+          this.emit('weave', { from: to === 'left' ? 'right' : 'left', to, depth: 0.25, width: 1, ms: 700 });
+          break;
+        }
         case 'stance':
           this.stance = this.stance === 'orthodox' ? 'southpaw' : 'orthodox';
           this.emit('stance', { stance: this.stance });
@@ -3188,6 +3254,9 @@
         lean: 0,
         squat_depth: now < this.squatUntil ? 1 : 0,
         level_low: now < this.squatUntil,
+        weaving: now < (this.weaveUntil || 0),
+        head_drop: now < (this.weaveUntil || 0) ? 0.25 : now < this.squatUntil ? 0.4 : 0,
+        head_x: now < this.slipUntil ? this.slip * 0.5 : 0,
         guard_up: this.guard,
         guard_left: this.guard,
         guard_right: this.guard,
@@ -3203,7 +3272,7 @@
 
   const BUTTONS = [
     ['point_left', 'Point L'], ['point_right', 'Point R'], ['turn_around', 'Turn 180'], ['wave_left', 'Wave L'], ['wave_right', 'Wave'],
-    ['jab', 'Jab'], ['cross', 'Cross'], ['hook', 'Hook'], ['overhand', 'Overhand'], ['uppercut', 'Upper'], ['bound_left', 'Bound L'], ['bound_right', 'Bound R'],
+    ['jab', 'Jab'], ['cross', 'Cross'], ['hook', 'Hook'], ['overhand', 'Overhand'], ['uppercut', 'Upper'], ['bound_left', 'Bound L'], ['bound_right', 'Bound R'], ['weave_left', 'Weave L'], ['weave_right', 'Weave R'],
     ['guard', 'Guard'], ['slip_left', 'Slip L'], ['slip_right', 'Slip R'], ['stance', 'Stance'],
     ['squat', 'Squat'], ['drive_up', 'Drive up'], ['jump', 'Jump'], ['stomp', 'Stomp'],
     ['teep', 'Teep'], ['low_kick', 'Low kick'], ['knee', 'Knee'],
@@ -3664,6 +3733,10 @@
           stance: det ? det.stance : 'square',
           slip: det ? det.slip : 0,
           level_low: det ? !!det.levelLow : false,
+          // head movement (0.13.0): where the head is (x S across, + right; y T below standing) and a weave in progress
+          head_x: det && det.head ? det.head.x : 0,
+          head_drop: det && det.head ? det.head.y : 0,
+          weaving: det ? !!det.weaving : false,
           side_cam: st.side.connected(raw.t), // a side camera is sending (0.12.0)
           confidence: sig.confidence,
         });
@@ -4029,7 +4102,7 @@
   };
 
   function emptySnapshot() {
-    return { cadence_spm: 0, effort: 0, speed: 0, turn: 0, lean: 0, squat_depth: 0, guard_up: false, guard_left: false, guard_right: false, stance: 'square', slip: 0, level_low: false, side_cam: false, stride: 1, knee_lift: 0, confidence: 0 };
+    return { cadence_spm: 0, effort: 0, speed: 0, turn: 0, lean: 0, squat_depth: 0, guard_up: false, guard_left: false, guard_right: false, stance: 'square', slip: 0, level_low: false, head_x: 0, head_drop: 0, weaving: false, side_cam: false, stride: 1, knee_lift: 0, confidence: 0 };
   }
 })(globalThis);
 </script>
