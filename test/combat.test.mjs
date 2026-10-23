@@ -409,7 +409,9 @@ test('demo: stance switches which hand jabs; slips and the arm pose for drawing 
   d.press('jab', 20);
   d.press('cross', 30);
   d.press('slip_left', 40);
-  assert.deepEqual(events.map((e) => e[0] + ':' + (e[1].hand || e[1].stance || e[1].side)), ['strike:left', 'stance:southpaw', 'strike:right', 'strike:left', 'slip:left']);
+  assert.deepEqual(events.filter((e) => e[0] !== 'punch').map((e) => e[0] + ':' + (e[1].hand || e[1].stance || e[1].side)), ['strike:left', 'stance:southpaw', 'strike:right', 'strike:left', 'slip:left']);
+  // 0.14.0: each punch button also emits 'punch'
+  assert.deepEqual(events.filter((e) => e[0] === 'punch').map((e) => e[1].hand + '-' + e[1].shape), ['left-straight', 'right-straight', 'left-straight']);
   assert.equal(d.signals(100).slip, -1);
   assert.equal(d.signals(100).stance, 'southpaw');
   const a = d.arms(150);

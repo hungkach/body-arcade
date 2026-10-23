@@ -196,7 +196,8 @@ test('demo input emits the spec event shapes', () => {
   d.press('squat', 720);
   d.setTurn(3);
   const s = d.signals(800);
-  assert.deepEqual(events.map((e) => e[0]), ['step', 'step', 'point', 'strike', 'squat']);
+  assert.deepEqual(events.map((e) => e[0]), ['step', 'step', 'point', 'strike', 'punch', 'squat']);
+  events.splice(4, 1);
   assert.deepEqual(events[0][1], { leg: 'left' });
   assert.deepEqual(events[1][1], { leg: 'right' });
   assert.deepEqual(events[2][1], { side: 'left' });
