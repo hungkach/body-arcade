@@ -234,3 +234,24 @@ test('head movement in a guard throws nothing with the side camera, even with it
     assert.deepEqual(strikes(r), WANT.orthodox, `${name}: punches through the swaps`);
   }
 });
+
+// 0.14.1 (Mark: the side camera should show a zone that is ideal for picking up)
+test('the side zone: in it at 2.4 m; too close, too far and too low say what to change', () => {
+  const zoneAt = (opts) => {
+    const script = scriptMotion([moves.stance(5, 8, 'orthodox')]);
+    const side = synthClip(Object.assign({ w: 720, h: 1280, f: 800, distance: 2.4, camHeight: 1.0, seed: 77, camYaw: -Math.PI / 2, motion: script.motion, seconds: script.seconds }, opts));
+    const lm = side.frames[side.frames.length - 1].lm;
+    return RE.sideZone((i) => lm[i] && { x: lm[i][0], y: lm[i][1], v: lm[i][3] ?? 1 });
+  };
+  assert.ok(zoneAt({}).ok, zoneAt({}).hint);
+  assert.match(zoneAt({ distance: 0.6 }).hint, /back/);
+  assert.equal(zoneAt({ distance: 7 }).hint, 'Move the phone closer');
+  assert.equal(zoneAt({ camHeight: 0.15 }).hint, 'Raise the phone to hip height');
+  assert.equal(zoneAt({ camHeight: 1.9 }).hint, 'Lower the phone to hip height');
+  // the engine reports it with the link
+  const script = scriptMotion([moves.stance(5, 8, 'orthodox')]);
+  const side = synthClip({ w: 720, h: 1280, f: 800, distance: 2.4, camHeight: 1.0, seed: 77, camYaw: -Math.PI / 2, motion: script.motion, seconds: script.seconds });
+  let k = 0;
+  const r = runScript(script, VARIANTS.portrait, { onFrame: (f, engine) => { if (k === 0) engine.side_sync(0); engine.side_feed(RE.sidePack(side.frames[Math.min(k++, side.frames.length - 1)]), f.t); } });
+  assert.deepEqual(r.engine.side_status().zone, { ok: true, hint: 'In the zone' });
+});

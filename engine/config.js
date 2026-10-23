@@ -318,7 +318,10 @@
       // standPitch, standMs, standFrames (0.12.1): the side's standing hip height and thigh angle
       // come from frames with both thighs within standPitch degrees of straight down, the last
       // standMs, at least standFrames of them
-      side: { maxAgeMs: 180, leadMs: 40, minVis: 0.5, swapMargin: 0.12, swapFrames: 12, flipMargin: 0, alignMs: 25, standPitch: 12, standMs: 20000, standFrames: 15, peer: null },
+      side: { maxAgeMs: 180, leadMs: 40, minVis: 0.5, swapMargin: 0.12, swapFrames: 12, flipMargin: 0, alignMs: 25, standPitch: 12, standMs: 20000, standFrames: 15, peer: null,
+        // the zone the player should stand in, in picture fractions (RE.sideZone, 0.14.1): head to
+        // knees at least minH of the height (about 2.5 m away on a phone's front camera)
+        zone: { x0: 0.12, x1: 0.88, y0: 0.04, y1: 0.96, minH: 0.25, cy0: 0.32, cy1: 0.68, minVis: 0.5 } },
       recorder: { maxMs: 30000, decimals: 4 },
       overlay: { eventLogSize: 10 },
     };
