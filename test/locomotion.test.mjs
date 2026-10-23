@@ -451,3 +451,21 @@ test('a brisk march with ordinary knees is not a run (0.8.4)', () => {
   const script = scriptMotion([moves.march(5, 20, { spm: 135 })]);
   for (const [name, r] of Object.entries(runAll(script))) assert.equal(r.count('run_start'), 0, `${name}: false run trigger`);
 });
+
+// 0.14.2 (Mark: the knee height sets the stride and the pace sets how often; slow high knees are
+// still high knees): 'high_step' for each high step at any pace; low knees never
+test('high_step: slow and fast high knees both count; marching does not', () => {
+  const script = scriptMotion([moves.march(5, 11), moves.highKnees(13, 19, { spm: 80 }), moves.highKnees(21, 27)]);
+  for (const name of ['portrait', 'landscape', 'livingRoom']) {
+    const r = runScript(script, VARIANTS[name]);
+    const hs = r.events.filter((e) => e.name === 'high_step');
+    const at = (a, b) => hs.filter((e) => e.t >= a * 1000 && e.t < b * 1000).length;
+    assert.equal(at(5, 12), 0, `${name}: marching`);
+    assert.ok(at(13, 20) >= 5, `${name}: slow high knees ${at(13, 20)}`);
+    assert.ok(at(21, 28) >= 10, `${name}: fast high knees ${at(21, 28)}`);
+    assert.ok(hs.every((e) => e.payload.lift > 0 || e.payload.pitch > 0), name);
+    // slow high knees are no run (a long stride at a walking pace); fast ones are
+    assert.equal(r.events.filter((e) => e.name === 'run_start' && e.t < 20000).length, 0, `${name}: slow is no run`);
+    assert.ok(r.events.some((e) => e.name === 'run_start' && e.t > 21000), `${name}: fast runs`);
+  }
+});

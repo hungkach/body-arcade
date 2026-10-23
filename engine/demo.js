@@ -49,6 +49,7 @@
       this.steps.push(now);
       if (this.steps.length > 40) this.steps.shift();
       this.emit('step', { leg: this.leg });
+      if (this.running) this.emit('high_step', { leg: this.leg, lift: 0.4, pitch: 70 }); // a run is high knees
       this.leg = this.leg === 'left' ? 'right' : 'left';
     }
     leftDown(now) {
