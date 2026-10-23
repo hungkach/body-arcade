@@ -198,3 +198,39 @@ test('the takedown: a jump out of a level change reads through the side camera a
     assert.deepEqual(ev, ['squat', 'drive_up', 'jump', 'squat', 'drive_up'], name);
   }
 });
+
+// 0.12.2 (Mark: stray punches during head movement, with the side camera): from the side both
+// fists sit together in front of the face, and a phone tracker swaps their labels there. Head
+// movement in a guard, with the labels swapping at random whenever the fists are close in the
+// side picture, throws nothing; and punches still read through it.
+function swappyFeed(script, seed = 5, whole = false) {
+  const side = synthClip({ w: 720, h: 1280, f: 800, distance: 2.4, seed: 77, camYaw: -Math.PI / 2, motion: script.motion, seconds: script.seconds });
+  let i = 0, r = seed;
+  const rand = () => ((r = (r * 1103515245 + 12345) % 2147483648) / 2147483648);
+  return (f, engine) => {
+    const k = i++ - 2;
+    if (k < 0) return;
+    if (k === 0) engine.side_sync(0);
+    const S = side.frames[k].lm, T = Math.hypot(S[11][1] - S[23][1], S[11][0] - S[23][0]) * 1280;
+    const close = Math.hypot((S[15][0] - S[16][0]) * 720, (S[15][1] - S[16][1]) * 1280) < 0.3 * T;
+    const sw = whole ? { 7: S[8], 8: S[7], 11: S[12], 12: S[11], 13: S[14], 14: S[13], 15: S[16], 16: S[15], 23: S[24], 24: S[23], 25: S[26], 26: S[25] } : { 13: S[14], 14: S[13], 15: S[16], 16: S[15] };
+    const lm = close && rand() < 0.5 ? Object.assign(S.slice(), sw) : S;
+    engine.side_feed(RE.sidePack(Object.assign({}, side.frames[k], { lm })), f.t);
+  };
+}
+test('head movement in a guard throws nothing with the side camera, even with its fists swapping (0.12.2)', () => {
+  const script = scriptMotion([moves.stance(5, 26, 'orthodox'), moves.lean(7, 8.5, 'left', 0.35), moves.lean(9.5, 11, 'right', 0.35), moves.lean(12, 13, 'left', 0.25), moves.lean(13.5, 14.5, 'right', 0.25),
+    moves.squat(16, 0.15, 0.4, 0.3, 0.5), moves.squat(18, 0.15, 0.4, 0.3, 0.5), moves.bound(20, 'left'), moves.bound(22, 'right')]);
+  for (const name of ['portrait', 'landscape', 'livingRoom']) {
+    for (const seed of [5, 11, 23]) for (const whole of [false, true]) {
+      const r = runScript(script, VARIANTS[name], { onFrame: swappyFeed(script, seed, whole) });
+      assert.deepEqual(strikes(r), [], `${name} seed ${seed}${whole ? ' whole side' : ''}`);
+    }
+    assert.deepEqual(strikes(runScript(script, VARIANTS[name])), [], `${name} without the side camera`);
+  }
+  const punches = combo('orthodox');
+  for (const name of ['portrait', 'landscape']) {
+    const r = runScript(punches, VARIANTS[name], { onFrame: swappyFeed(punches) });
+    assert.deepEqual(strikes(r), WANT.orthodox, `${name}: punches through the swaps`);
+  }
+});
