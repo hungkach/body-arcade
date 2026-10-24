@@ -8,14 +8,15 @@ import { moves, scriptMotion, synthClip, BODIES, LOW_GUARD } from './helpers/syn
 import { runScript, VARIANTS } from './helpers/run-clip.mjs';
 
 const runAll = (script, opts) => Object.fromEntries(Object.entries(VARIANTS).map(([name, v]) => [name, runScript(script, v, opts)]));
-const punches = (r) => r.events.filter((e) => e.name === 'punch').map((e) => `${e.payload.hand}-${e.payload.shape}`);
+const punches = (r) => r.events.filter((e) => e.name === 'punch').map((e) => `${e.payload.hand}-${e.payload.arc === 'up' ? 'up' : e.payload.shape}`);
 const squashDepth = (k) => (f) => {
   for (const [s, e, w] of [[11, 13, 15], [12, 14, 16]]) {
     const z0 = f.wl[s][2];
     for (const i of [e, w]) f.wl[i][2] = z0 + (f.wl[i][2] - z0) * k;
   }
 };
-const SHAPE = { straight: 'straight', hook: 'round', uppercut: 'round', shortHook: 'round' };
+// 0.15.0: an uppercut's arc is 'up' (shown here in place of round), hooks are round 'side'
+const SHAPE = { straight: 'straight', hook: 'round', uppercut: 'up', shortHook: 'round' };
 function combo(stance, t0 = 6.5) {
   const segs = [moves.stance(5, t0 + 11, stance)], want = [];
   let t = t0;
@@ -44,14 +45,14 @@ test('it lands on the way out: before the fist is back, and before the old strik
   const p = r.events.filter((e) => e.name === 'punch'), s = r.events.filter((e) => e.name === 'strike');
   assert.equal(p.length, s.length);
   p.forEach((e, i) => assert.ok(e.t <= s[i].t, `punch ${i} at ${e.t}, strike at ${s[i].t}`));
-  // each lands within 200 ms of being thrown (6.5 s, then every 1.2 s)
-  p.forEach((e, i) => assert.ok(e.t - (6500 + 1200 * i) <= 200, `punch ${i} at ${e.t}`));
+  // each lands within 200 ms of being thrown (6.5 s, then every 1.2 s); an uppercut waits for its rise
+  p.forEach((e, i) => assert.ok(e.t - (6500 + 1200 * i) <= (e.payload.arc === 'up' ? 300 : 200), `punch ${i} at ${e.t}`));
 });
 
 test('loose hooks, short hooks, loose uppercuts and a wide hook are round, one each, a double jab is two', () => {
   const script = scriptMotion([moves.stance(5, 30, 'orthodox'), moves.loosePunch(7, 'left', 'hook'), moves.loosePunch(8.5, 'right', 'hook'), moves.loosePunch(10, 'left', 'shortHook'), moves.loosePunch(11.5, 'right', 'shortHook'), moves.loosePunch(13, 'left', 'uppercut'), moves.loosePunch(14.5, 'right', 'uppercut'), moves.wideHook(16, 'left'),
     moves.punch(18, 'left', 'straight'), moves.punch(18.5, 'left', 'straight')]);
-  const want = ['left-round', 'right-round', 'left-round', 'right-round', 'left-round', 'right-round', 'left-round', 'left-straight', 'left-straight'];
+  const want = ['left-round', 'right-round', 'left-round', 'right-round', 'left-up', 'right-up', 'left-round', 'left-straight', 'left-straight'];
   for (const [name, r] of Object.entries(runAll(script))) assert.deepEqual(punches(r), want, name);
   for (const [name, r] of Object.entries(runAll(script, { onFrame: squashDepth(0.3) }))) assert.deepEqual(punches(r), want, `${name} squashed`);
 });
@@ -116,7 +117,7 @@ test('with a side camera whose fists swap labels: head movement punches nothing,
 
 test('a fast combination: jab, cross, hook, uppercut half a second apart, every one lands', () => {
   const script = scriptMotion([moves.stance(5, 14, 'orthodox'), moves.punch(7, 'left', 'straight'), moves.punch(7.4, 'right', 'straight'), moves.punch(7.8, 'left', 'hook'), moves.punch(8.35, 'right', 'uppercut')]);
-  const want = ['left-straight', 'right-straight', 'left-round', 'right-round'];
+  const want = ['left-straight', 'right-straight', 'left-round', 'right-up'];
   for (const [name, r] of Object.entries(runAll(script))) assert.deepEqual(punches(r), want, name);
   for (const [name, r] of Object.entries(runAll(script, { onFrame: squashDepth(0.3) }))) assert.deepEqual(punches(r), want, `${name} squashed`);
 });
