@@ -73,7 +73,7 @@ test('stride: low tired knees still walk, just shorter; higher knees stride long
   assert.ok(high.stride > mid.stride && high.speed > mid.speed, `high ${JSON.stringify(high)} mid ${JSON.stringify(mid)}`);
 });
 
-test('high knees start one run, run at run speed, and end it', () => {
+test('high knees start one run, run at stride times cadence, and end it', () => {
   const script = scriptMotion([moves.march(5, 9), moves.highKnees(9, 19), moves.march(19, 23)]);
   for (const [name, r] of Object.entries(runAll(script))) {
     assert.equal(r.count('run_start'), 1, `${name}: run_start`);
@@ -86,9 +86,11 @@ test('high knees start one run, run at run speed, and end it', () => {
     assert.ok(end > 19000 && end < 20000, `${name}: run ended at ${end}`);
     const during = r.frames.find((f) => f.t >= 15000);
     assert.equal(during.loco.state, 'run');
-    // high knees run at runSpeed, longer still for higher knees (stride up to strideMax)
-    const want = cfg.locomotion.runSpeed * Math.min(cfg.locomotion.strideMax, Math.max(1, during.snap.stride));
-    assert.ok(Math.abs(during.snap.speed - want) < 0.05, `${name}: run speed ${during.snap.speed} vs ${want}`);
+    // 0.18.0: one speed from walk to run, stride times cadence; high knees stride long
+    const L = cfg.locomotion, cad = Math.min(Math.max(during.snap.cadence_spm / L.refCadence, L.walkScale[0]), L.walkScale[1]);
+    const want = L.walkSpeed * cad * during.snap.stride;
+    assert.ok(Math.abs(during.snap.speed - want) < 0.1, `${name}: run speed ${during.snap.speed} vs ${want}`);
+    assert.ok(during.snap.stride > 1.8 && during.snap.speed > 3.2, `${name}: a run, stride ${during.snap.stride} speed ${during.snap.speed}`);
     assert.ok(during.snap.effort > 0.9, `${name}: effort ${during.snap.effort}`);
   }
 });
@@ -330,7 +332,7 @@ test('state machine: walk speed follows cadence, clamped', () => {
   for (const spm of [80, 110, 140]) {
     const l = loco();
     stepAt(l, 0, 3000, spm);
-    const expected = cfg.locomotion.walkSpeed * Math.min(Math.max(spm / 110, 0.8), 1.2);
+    const expected = cfg.locomotion.walkSpeed * Math.min(Math.max(spm / 110, cfg.locomotion.walkScale[0]), cfg.locomotion.walkScale[1]);
     assert.ok(Math.abs(l.speed - expected) < 0.01, `${spm} spm gives ${l.speed}, want ${expected}`);
     assert.equal(l.state, 'walk');
   }
@@ -357,12 +359,12 @@ test('state machine: ramps up over about 300 ms and coasts down over about 400 m
   assert.equal(l.state, 'idle');
 });
 
-test('state machine: run speed only while running and stepping', () => {
+test('state machine: the run state only while running and stepping; speed is stride times cadence throughout', () => {
   const l = loco();
   l.onEvent('run_start', {}, 0);
   stepAt(l, 0, 2000, 170);
   assert.equal(l.state, 'run');
-  assert.ok(Math.abs(l.speed - cfg.locomotion.runSpeed) < 0.01);
+  assert.ok(Math.abs(l.speed - cfg.locomotion.walkSpeed * Math.min(170 / 110, cfg.locomotion.walkScale[1])) < 0.01);
   l.onEvent('run_end', {}, 2000);
   stepAt(l, 2033, 2000, 110);
   assert.equal(l.state, 'walk');
@@ -467,5 +469,20 @@ test('high_step: slow and fast high knees both count; marching does not', () => 
     // slow high knees are no run (a long stride at a walking pace); fast ones are
     assert.equal(r.events.filter((e) => e.name === 'run_start' && e.t < 20000).length, 0, `${name}: slow is no run`);
     assert.ok(r.events.some((e) => e.name === 'run_start' && e.t > 21000), `${name}: fast runs`);
+  }
+});
+
+// 0.18.0 (Mark: high knees never ran: the warm-up asks for any pace, and a run needed 120 a minute;
+// "knee height determines stride, multiplied by frequency to determine speed")
+test('speed is stride times cadence: high knees at a steady pace outrun fast low knees, and run from 100 a minute', () => {
+  const at = (r, ms) => r.frames.find((f) => f.t >= ms);
+  for (const name of ['portrait', 'landscape', 'livingRoom']) {
+    const low = runScript(scriptMotion([moves.march(5, 15, { spm: 150, thigh: 0.6 })]), VARIANTS[name]);
+    const high = runScript(scriptMotion([moves.highKnees(5, 15, { spm: 110 })]), VARIANTS[name]);
+    const ls = at(low, 13000).snap, hs = at(high, 13000).snap;
+    assert.ok(hs.speed > ls.speed * 1.4, `${name}: high knees at 110 ${hs.speed.toFixed(2)} vs low knees at 150 ${ls.speed.toFixed(2)}`);
+    assert.equal(low.count('run_start'), 0, `${name}: fast low knees jog`);
+    assert.equal(high.count('run_start'), 1, `${name}: high knees at 110 run`);
+    assert.equal(at(high, 13000).loco.state, 'run', name);
   }
 });
