@@ -122,3 +122,17 @@ test('a fast combination: jab, cross, hook, uppercut half a second apart, every 
   for (const [name, r] of Object.entries(runAll(script, { onFrame: squashDepth(0.3) }))) assert.deepEqual(punches(r), want, `${name} squashed`);
 });
 
+
+// 0.16.0 (Mark: punches traverse the clock): each punch carries the fist's path across the picture
+test('the path: a rear hook sweeps in from the right, a lead hook from the left, an uppercut dips then rises', () => {
+  const script = scriptMotion([moves.stance(5, 16, 'orthodox'), moves.punch(7, 'right', 'hook'), moves.punch(8.5, 'left', 'hook'), moves.punch(10, 'right', 'uppercut'), moves.punch(11.5, 'left', 'straight')]);
+  for (const [name, r] of Object.entries(runAll(script))) {
+    const [rh, lh, up, jab] = r.events.filter((e) => e.name === 'punch').map((e) => e.payload.path);
+    for (const p of [rh, lh, up, jab]) assert.equal(p.length, 8, name);
+    const maxX = (p) => Math.max(...p.map((q) => q[0])), minX = (p) => Math.min(...p.map((q) => q[0])), minY = (p) => Math.min(...p.map((q) => q[1]));
+    assert.ok(maxX(rh) > rh[7][0] + 0.1, `${name}: rear hook out right then in ${JSON.stringify(rh)}`);
+    assert.ok(minX(lh) < lh[7][0] - 0.1, `${name}: lead hook out left then in ${JSON.stringify(lh)}`);
+    assert.ok(up[7][1] > minY(up) + 0.15, `${name}: uppercut rises from its low point ${JSON.stringify(up)}`);
+    assert.ok(Math.abs(jab[7][0] - jab[0][0]) < 0.25 && Math.abs(jab[7][1] - jab[0][1]) < 0.25, `${name}: a jab barely moves across the picture ${JSON.stringify(jab)}`);
+  }
+});
