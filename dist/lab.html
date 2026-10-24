@@ -328,6 +328,7 @@
           // that comes out of it is a strike, narrow enough that it detects first from leaving"): the zone
           // is one fist around each fist's guard spot, and a punch lands as it leaves (exitMs), not at full reach
           dead: 0.1,         // m: the zone around home, about one fist (was 0.15)
+          fistM: 0.095,      // m: a fist's width; with a side camera the player sets the zone in fists on the phone (0.19.0)
           fireOnExit: true,  // land a punch as it leaves the zone (an uppercut still waits to rise)
           exitMs: 50,        // out of the zone this long first
           dropK: 1.0,        // and leaving it more down than out (not rising as an uppercut) is the guard dropping
@@ -479,7 +480,10 @@
       side: { maxAgeMs: 180, leadMs: 40, minVis: 0.5, swapMargin: 0.12, swapFrames: 12, flipMargin: 0, alignMs: 25, standPitch: 12, standMs: 20000, standFrames: 15, peer: null,
         // the zone the player should stand in, in picture fractions (RE.sideZone, 0.14.1): head to
         // knees at least minH of the height (about 2.5 m away on a phone's front camera)
-        zone: { x0: 0.12, x1: 0.88, y0: 0.04, y1: 0.96, minH: 0.25, cy0: 0.32, cy1: 0.68, minVis: 0.5 } },
+        zone: { x0: 0.12, x1: 0.88, y0: 0.04, y1: 0.96, minH: 0.25, cy0: 0.32, cy1: 0.68, minVis: 0.5 },
+        // the stance box the side phone draws (0.19.0, RE.SideBox): the room in front of the lead fist
+        // and behind the rear one, in fists (the player sets it on the phone; it sizes the punch zone)
+        box: { fists: 1.5, minFists: 0.5, maxFists: 4, fistT: 0.2, restSpeed: 0.6, restK: 0.15, headT: 0.45 } },
       recorder: { maxMs: 30000, decimals: 4 },
       overlay: { eventLogSize: 10 },
     };
@@ -1889,6 +1893,9 @@
         this.hipPrev = { t, x: hm.x };
       }
       const bodyMoving = t < (this.hipQuiet || 0);
+      // the zone's size: one fist, or with a side camera the room the player set on the phone (0.19.0)
+      const sv = ctx.sideView, dead = ctx.sideOn && sv && sv.zoneFists > 0 ? sv.zoneFists * c.fistM : c.dead;
+      out.punchZoneM = dead;
       for (const hand of ['left', 'right']) {
         const h = this.hands[hand], a = arms[hand], q = arms.torso[hand];
         // from its own shoulder, meters: x the player's right, y up, z toward the camera; tx in the torso's frame
@@ -1938,19 +1945,19 @@
         if (s.v < S.stillSpeed * k) { if (h.stillAt == null) h.stillAt = t; } else h.stillAt = null;
         // (after a punch, a new home somewhere else needs the hand held still a moment)
         const settled = !h.away || t - h.stillAt >= c.rehomeMs;
-        if (s.v < S.stillSpeed * k && ((settled && (shape || taught)) || (h.home && d <= c.dead * k * 0.5))) {
+        if (s.v < S.stillSpeed * k && ((settled && (shape || taught)) || (h.home && d <= dead * k * 0.5))) {
           // follows the hand while it rests (a guard drifts lower through a tired round)
-          h.home = h.home && d <= c.dead * k ? { x: h.home.x + (s.x - h.home.x) * 0.2, y: h.home.y + (s.y - h.home.y) * 0.2, z: h.home.z + (s.z - h.home.z) * 0.2, angle: s.angle } : s;
+          h.home = h.home && d <= dead * k ? { x: h.home.x + (s.x - h.home.x) * 0.2, y: h.home.y + (s.y - h.home.y) * 0.2, z: h.home.z + (s.z - h.home.z) * 0.2, angle: s.angle } : s;
           h.away = false;
         }
         if (!h.home) continue;
         // re-armed: back near home, or most of the way back and slowing (a combination rests short of
         // home, and the depth the camera reads for a fist coming back lags); from there the spot it
         // came back to is home for the next punch
-        if (d <= c.dead * k) h.tmp = null;
-        if (h.away && (d <= c.rearm * k || (d <= c.rearmFrac * h.lastFar && s.v < 2 * S.stillSpeed * k))) { h.away = false; h.tmp = d > c.dead * k ? Object.assign({ d }, s) : null; }
+        if (d <= dead * k) h.tmp = null;
+        if (h.away && (d <= Math.min(c.rearm, dead) * k || (d <= c.rearmFrac * h.lastFar && s.v < 2 * S.stillSpeed * k))) { h.away = false; h.tmp = d > dead * k ? Object.assign({ d }, s) : null; }
         const dr = h.tmp ? Math.hypot(s.x - h.tmp.x, s.y - h.tmp.y, s.z - h.tmp.z) : d;
-        if (dr <= c.dead * k) {
+        if (dr <= dead * k) {
           if (!h.away) { h.nearAt = t; h.rest = s; }
           continue;
         }
@@ -2516,15 +2523,54 @@
     return Object.assign(out, { ok: true, hint: 'In the zone' });
   };
 
+  // The stance box on the side phone (0.19.0, Mark 10/24: "side camera zone should be adjustable on
+  // the side camera itself; get in fighting stance and make sure there is 1.5 fist width front and
+  // back"). From the side picture: which way the player faces, the torso length T, and where each
+  // fist rests (followed while it is slow, so a punch does not drag the box). The box runs from the
+  // rear fist minus the room to the lead fist plus the room (fists of fistT torso lengths), from
+  // above the head to the hips. update(get, fists) takes landmarks as { x, y, v } in picture
+  // fractions (get(i)) and returns { ok, box { x0, x1, y0, y1 }, front, back } in picture fractions,
+  // or { ok: false } until the body and both fists are seen. The engine's punch zone uses the same
+  // room (`punch.fistM` meters a fist) while the side camera sends it.
+  class SideBox {
+    constructor(cfg) { this.c = (cfg || RE.defaultConfig()).side.box; this.rest = null; this.last = null; this.face = 0; }
+    update(get, fists) {
+      const c = this.c, seen = (i) => { const p = get(i); return p && p.v >= 0.5 ? p : null; };
+      const sl = seen(L.L_SHOULDER), sr = seen(L.R_SHOULDER), hl = seen(L.L_HIP), hr = seen(L.R_HIP), n = seen(L.NOSE), wl = seen(L.L_WRIST), wr = seen(L.R_WRIST);
+      if (!sl || !sr || !hl || !hr || !wl || !wr) return { ok: false };
+      const sm = RE.mid(sl, sr), hm = RE.mid(hl, hr), T = RE.dist(sm, hm);
+      if (!(T > 0.02)) return { ok: false };
+      const el = seen(L.L_EAR), er = seen(L.R_EAR), ear = el && er ? RE.mid(el, er) : el || er;
+      if (n && ear) this.face += (Math.sign(n.x - ear.x) - this.face) * 0.1;
+      const dir = this.face >= 0 ? 1 : -1;
+      // each fist's forward reach from the shoulder midpoint, in T; its resting spot follows it while slow
+      const r = { l: (dir * (wl.x - sm.x)) / T, r: (dir * (wr.x - sm.x)) / T };
+      if (!this.rest) this.rest = { l: r.l, r: r.r };
+      for (const k of ['l', 'r']) {
+        const v = this.last ? Math.abs(r[k] - this.last[k]) * 30 : 0; // T a second at about 30 frames a second
+        if (v < c.restSpeed) this.rest[k] += (r[k] - this.rest[k]) * c.restK;
+      }
+      this.last = r;
+      const room = RE.clamp(fists == null ? c.fists : fists, c.minFists, c.maxFists) * c.fistT;
+      const front = Math.max(this.rest.l, this.rest.r) + room, back = Math.min(this.rest.l, this.rest.r) - room;
+      const xa = sm.x + dir * back * T, xb = sm.x + dir * front * T;
+      const top = (n ? n.y : sm.y - 0.3 * T) - c.headT * T;
+      return { ok: true, dir, box: { x0: Math.min(xa, xb), x1: Math.max(xa, xb), y0: top, y1: hm.y }, front: sm.x + dir * front * T, back: sm.x + dir * back * T, out: { l: r.l > front, r: r.r > front } };
+    }
+  }
+  RE.SideBox = SideBox;
+
   class SideView {
     constructor(cfg) { this.c = cfg.side; this.sm = cfg.smoothing; this.offset = null; this.reset(); }
-    reset() { this.samples = []; this.face = 0; this.swap = false; this.ev = 0; this.lastRaw = null; this.legSwap = false; this.legEv = 0; this.lastKnees = null; this.stand = []; this.arrivals = []; this.spreads = []; this.f = {}; }
+    reset() { this.zoneFists = null; this.samples = []; this.face = 0; this.swap = false; this.ev = 0; this.lastRaw = null; this.legSwap = false; this.legEv = 0; this.lastKnees = null; this.stand = []; this.arrivals = []; this.spreads = []; this.f = {}; }
     // the phone's clock to the main clock: main = side + offset (ms)
     sync(offset) { this.offset = offset; }
     filt(key, v, tSec) { const f = (this.f[key] = this.f[key] || new RE.OneEuroFilter(this.sm)); return f.filter(v, tSec); }
     // frame: from RE.sidePack; t: when it arrived, on the main clock
     push(frame, t, cal) {
       if (!frame || !frame.p || frame.p.length < RE.SIDE_LM.length) return;
+      // the stance box the player set on the phone, in fists (0.19.0): it sizes the punch zone
+      if (frame.zf > 0) this.zoneFists = frame.zf;
       const P = {};
       RE.SIDE_LM.forEach((i, k) => { const q = frame.p[k]; P[i] = { x: q[0] * frame.w, y: q[1] * frame.h, v: q[2] }; });
       this.zone = RE.sideZone((i) => { const q = frame.p[RE.SIDE_LM.indexOf(i)]; return q && { x: q[0], y: q[1], v: q[2] }; }, this.c.zone);
@@ -2750,7 +2796,8 @@
 
   // On the phone: open the camera and the tracker, link to the tablet's code, send each frame.
   // opts.source: a frame source for tests ({ start(video, preset, onFrame, onStatus), stop() }).
-  RE.sideCamera = async function ({ code, video, preset = 'living_room', onStatus = () => {}, onFrame, source, config } = {}) {
+  // zone(): the stance box room the player set on the phone, in fists (0.19.0), sent with each frame
+  RE.sideCamera = async function ({ code, video, preset = 'living_room', onStatus = () => {}, onFrame, source, config, zone } = {}) {
     const cfg = RE.mergeConfig(RE.defaultConfig(), config);
     const Peer = await loadPeer();
     onStatus('Linking to ' + code);
@@ -2768,6 +2815,7 @@
     const src = (cam.src = source || new RE.CameraPoseSource(cfg));
     await src.start(video, RE.presets[preset] || RE.presets.living_room, (raw) => {
       const p = RE.sidePack(raw);
+      if (p && zone) { const zf = +zone(); if (zf > 0) p.zf = zf; }
       if (p && conn.open) { try { conn.send({ k: 'f', f: p }); cam.sent++; } catch (_) {} }
       if (onFrame) onFrame(raw);
     }, (msg) => onStatus(msg, 'linked'));
@@ -4263,7 +4311,7 @@
       side_status() {
         const t = st.raw ? st.raw.t : RE.now(), s = st.side.samples[st.side.samples.length - 1];
         const connected = st.side.connected(t), z = connected && st.side.zone;
-        return { connected, fps: st.side.fps(t), tilt: s ? Math.round((s.tilt * 180) / Math.PI) : null, using: !!(st.det && st.det.sideUsed), synced: st.side.offset != null, zone: z ? { ok: z.ok, hint: z.hint } : null };
+        return { connected, fps: st.side.fps(t), tilt: s ? Math.round((s.tilt * 180) / Math.PI) : null, using: !!(st.det && st.det.sideUsed), synced: st.side.offset != null, zone: z ? { ok: z.ok, hint: z.hint } : null, zoneFists: connected ? st.side.zoneFists : null };
       },
       // Which camera is running: {facing, lens, fallback, label} or null.
       camera() { return st.sourceObj && st.sourceObj.info ? Object.assign({}, st.sourceObj.info) : null; },
