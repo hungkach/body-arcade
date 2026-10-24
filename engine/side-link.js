@@ -80,7 +80,7 @@
 
   // On the phone: open the camera and the tracker, link to the tablet's code, send each frame.
   // opts.source: a frame source for tests ({ start(video, preset, onFrame, onStatus), stop() }).
-  // zone(): the stance box room the player set on the phone, in fists (0.19.0), sent with each frame
+  // zone(): the stance box room the player set on the phone, in fists (0.20.0), sent with each frame
   RE.sideCamera = async function ({ code, video, preset = 'living_room', onStatus = () => {}, onFrame, source, config, zone } = {}) {
     const cfg = RE.mergeConfig(RE.defaultConfig(), config);
     const Peer = await loadPeer();

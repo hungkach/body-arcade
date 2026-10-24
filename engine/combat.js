@@ -439,7 +439,7 @@
         this.hipPrev = { t, x: hm.x };
       }
       const bodyMoving = t < (this.hipQuiet || 0);
-      // the zone's size: one fist, or with a side camera the room the player set on the phone (0.19.0)
+      // the zone's size: one fist, or with a side camera the room the player set on the phone (0.20.0)
       const sv = ctx.sideView, dead = ctx.sideOn && sv && sv.zoneFists > 0 ? sv.zoneFists * c.fistM : c.dead;
       out.punchZoneM = dead;
       for (const hand of ['left', 'right']) {

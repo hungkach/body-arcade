@@ -1,4 +1,4 @@
-// 0.19.0 (Mark 10/24: "side camera zone should be adjustable on the side camera itself, with buttons;
+// 0.20.0 (Mark 10/24: "side camera zone should be adjustable on the side camera itself, with buttons;
 // get in fighting stance and make sure there is 1.5 fist width front and back"): the side phone
 // draws a stance box (RE.SideBox) and sends the room the player set, in fists, with each frame; the
 // engine's punch zone uses the same room while the side camera is connected.

@@ -68,7 +68,7 @@
     return Object.assign(out, { ok: true, hint: 'In the zone' });
   };
 
-  // The stance box on the side phone (0.19.0, Mark 10/24: "side camera zone should be adjustable on
+  // The stance box on the side phone (0.20.0, Mark 10/24: "side camera zone should be adjustable on
   // the side camera itself; get in fighting stance and make sure there is 1.5 fist width front and
   // back"). From the side picture: which way the player faces, the torso length T, and where each
   // fist rests (followed while it is slow, so a punch does not drag the box). The box runs from the
@@ -114,7 +114,7 @@
     // frame: from RE.sidePack; t: when it arrived, on the main clock
     push(frame, t, cal) {
       if (!frame || !frame.p || frame.p.length < RE.SIDE_LM.length) return;
-      // the stance box the player set on the phone, in fists (0.19.0): it sizes the punch zone
+      // the stance box the player set on the phone, in fists (0.20.0): it sizes the punch zone
       if (frame.zf > 0) this.zoneFists = frame.zf;
       const P = {};
       RE.SIDE_LM.forEach((i, k) => { const q = frame.p[k]; P[i] = { x: q[0] * frame.w, y: q[1] * frame.h, v: q[2] }; });
