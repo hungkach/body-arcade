@@ -303,9 +303,18 @@ const PUNCH_PATHS = {
   bodyStraight: [[0, GUARD], [0.12, { a: 0.15, f: 0.95, a2: 0.15, f2: 1.1 }], [0.18, { a: 0.15, f: 0.95, a2: 0.15, f2: 1.1 }], [0.4, GUARD]],
   bodyHook: [[0, GUARD], [0.1, { a: 1.0, f: 0.15, a2: 0.6, f2: 1.2 }], [0.24, { a: 1.0, f: 0.9, a2: 0.6, f2: 1.2 }], [0.5, GUARD]],
   overhand: [[0, GUARD], [0.1, { a: 2.0, f: 0.5, a2: 2.1, f2: 1.5 }], [0.26, { a: 1.35, f: 1.2, a2: 1.0, f2: 2.1 }], [0.5, GUARD]],
+  // 0.21.0, a body round as people throw it (Mark 10/25: "lower rounds do not pick up at all"): the fist
+  // drops first, down past the ribs with the elbow in, then the elbow swings out and the fist sweeps in low, to the body at arm's length
+  lowRound: [[0, GUARD], [0.1, { a: 0.25, f: 0.1, a2: Math.PI + 0.55, f2: 1.0 }], [0.24, { a: 0.7, f: 0.8, a2: Math.PI + 1.75, f2: 1.3 }], [0.55, GUARD]],
   shovel: [[0, GUARD], [0.12, { a: 0.55, f: 0.25, a2: 0.9, f2: 1.3 }], [0.28, { a: 0.95, f: 0.8, a2: 2.0, f2: 1.9 }], [0.55, GUARD]],
 };
 const OVERHEAD = { a: 2.95, f: 0, a2: 3.05, f2: 0 };
+// 0.21.0, hands moving fast inside the pillar, not punches: a fist tucked down to the ribs and back, a
+// fist brought across the face toward the other cheek and back
+const INSIDE_PATHS = {
+  tuck: [[0, GUARD], [0.12, { a: 0.25, f: 0.1, a2: Math.PI + 0.55, f2: 1.0 }], [0.3, { a: 0.25, f: 0.1, a2: Math.PI + 0.55, f2: 1.0 }], [0.5, GUARD]],
+  across: [[0, GUARD], [0.12, { a: 0.25, f: 0.55, a2: Math.PI + 0.85, f2: 0.3 }], [0.3, { a: 0.25, f: 0.55, a2: Math.PI + 0.85, f2: 0.3 }], [0.5, GUARD]],
+};
 // 0.9.0: punches as people actually throw them on the first camera sessions (Mark 10/20: the
 // warm-up missed hooks and uppercuts): a hook with the elbow lower and less wound out, a short
 // hook, and an uppercut that only dips to the chest
@@ -468,6 +477,11 @@ export const moves = {
       m[leg === 'left' ? 'thighL' : 'thighR'] = 1.45 * k;
     },
   }),
+  // 0.21.0: a hand moved fast inside the pillar ('tuck', 'across'; INSIDE_PATHS)
+  inside: (t0, hand, type) => {
+    const path = armPath(INSIDE_PATHS[type]), dur = INSIDE_PATHS[type][INSIDE_PATHS[type].length - 1][0];
+    return { start: t0, end: t0 + dur, kind: 'arms', expected: {}, apply(t, m) { m[hand === 'left' ? 'armL' : 'armR'] = path(t - t0); } };
+  },
   // both arms held in a pose (e.g. LOW_GUARD) between start and end
   holdArms: (start, end, pose) => armPose(start, end, { left: pose, right: pose, rampS: 0.2 }),
   // 0.9.0: a looser punch ('hook', 'shortHook', 'uppercut'; see LOOSE_PATHS)
