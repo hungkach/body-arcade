@@ -245,6 +245,26 @@ test('tv preset opens the back ultra-wide, else zooms out, else falls back to th
   assert.deepEqual([r.info.facing, r.info.fallback], ['user', false]);
 });
 
+// 0.17.0 (Mark: the iPad's front camera is an ultra-wide; why not use its widest view?)
+test('front_wide asks the front camera for its whole 4:3 picture and zooms out where it can', async () => {
+  let md = fakeCamera({ zoomMin: 0.5 });
+  let r = await RE.openCamera(RE.presets.front_wide, cfg, md);
+  assert.deepEqual([r.info.facing, r.info.lens, r.info.fallback], ['user', 'front_wide_zoom', false]);
+  const v = md.calls[0];
+  assert.equal(v.facingMode, 'user');
+  assert.equal(v.aspectRatio.ideal, 4 / 3);
+  assert.ok(v.width.ideal / v.height.ideal === 4 / 3 && v.width.ideal >= 1440, JSON.stringify(v));
+  assert.deepEqual(md.applied, { advanced: [{ zoom: 0.5 }] });
+  r = await RE.openCamera(RE.presets.front_wide, cfg, fakeCamera());
+  assert.deepEqual([r.info.facing, r.info.lens], ['user', 'front_wide']);
+  // the plain front preset is unchanged: 16:9, no zoom
+  md = fakeCamera({ zoomMin: 0.5 });
+  r = await RE.openCamera(RE.presets.living_room, cfg, md);
+  assert.equal(r.info.lens, 'front');
+  assert.equal(md.calls[0].aspectRatio, undefined);
+  assert.equal(md.applied, null);
+});
+
 // ---- speech ----
 
 test('speech: false keeps calibration quiet; the default speaks', () => {
