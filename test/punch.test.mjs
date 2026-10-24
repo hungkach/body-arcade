@@ -127,7 +127,8 @@ test('a fast combination: jab, cross, hook, uppercut half a second apart, every 
 test('the path: a rear hook sweeps in from the right, a lead hook from the left, an uppercut dips then rises', () => {
   const script = scriptMotion([moves.stance(5, 16, 'orthodox'), moves.punch(7, 'right', 'hook'), moves.punch(8.5, 'left', 'hook'), moves.punch(10, 'right', 'uppercut'), moves.punch(11.5, 'left', 'straight')]);
   for (const [name, r] of Object.entries(runAll(script))) {
-    const [rh, lh, up, jab] = r.events.filter((e) => e.name === 'punch').map((e) => e.payload.path);
+    // 0.18.0: 'punch' lands as the fist leaves the zone; 'punch_path' carries the whole sweep
+    const [rh, lh, up, jab] = r.events.filter((e) => e.name === 'punch_path').map((e) => e.payload.path);
     for (const p of [rh, lh, up, jab]) assert.equal(p.length, 8, name);
     const maxX = (p) => Math.max(...p.map((q) => q[0])), minX = (p) => Math.min(...p.map((q) => q[0])), minY = (p) => Math.min(...p.map((q) => q[1]));
     assert.ok(maxX(rh) > rh[7][0] + 0.1, `${name}: rear hook out right then in ${JSON.stringify(rh)}`);
@@ -140,11 +141,30 @@ test('the path: a rear hook sweeps in from the right, a lead hook from the left,
 test('the rest of the clock: body hooks and an overhand are round side punches, one each, with their heights in the path', () => {
   const script = scriptMotion([moves.stance(5, 16, 'orthodox'), moves.punch(7, 'left', 'bodyHook'), moves.punch(8.3, 'right', 'bodyHook'), moves.punch(9.6, 'right', 'overhand'), moves.punch(10.9, 'left', 'hook')]);
   for (const [name, r] of Object.entries(runAll(script))) {
-    const ps = r.events.filter((e) => e.name === 'punch').map((e) => e.payload);
-    assert.deepEqual(ps.map((p) => `${p.hand}-${p.shape}-${p.arc}`), ['left-round-side', 'right-round-side', 'right-round-side', 'left-round-side'], name);
+    const kinds = r.events.filter((e) => e.name === 'punch').map((e) => e.payload);
+    assert.deepEqual(kinds.map((p) => `${p.hand}-${p.shape}-${p.arc}`), ['left-round-side', 'right-round-side', 'right-round-side', 'left-round-side'], name);
+    const ps = r.events.filter((e) => e.name === 'punch_path').map((e) => e.payload);   // the whole sweep (0.18.0)
+    assert.equal(ps.length, 4, name);
     const lowest = (p) => Math.min(...p.path.map((q) => q[1])), highest = (p) => Math.max(...p.path.map((q) => q[1]) ) - p.path[0][1];
     assert.ok(lowest(ps[0]) < -0.4 && lowest(ps[1]) < -0.4, `${name}: body hooks low ${lowest(ps[0])} ${lowest(ps[1])}`);
     assert.ok(lowest(ps[3]) > -0.3, `${name}: a head hook stays up ${lowest(ps[3])}`);
     assert.ok(highest(ps[2]) > 0.1 && highest(ps[3]) < 0.05, `${name}: the overhand rises over the guard ${highest(ps[2])}, the hook does not ${highest(ps[3])}`);
   }
+});
+
+// 0.18.0 (Mark 10/24: "any fist that comes out of the middle zone is a strike, detected as it leaves")
+test('a punch lands as the fist leaves the zone: straights and hooks within 100 ms, then its whole path follows', () => {
+  const { script } = combo('orthodox');
+  for (const [name, r] of Object.entries(runAll(script))) {
+    const p = r.events.filter((e) => e.name === 'punch'), q = r.events.filter((e) => e.name === 'punch_path');
+    assert.equal(q.length, p.length, name);
+    p.forEach((e, i) => { if (e.payload.arc !== 'up') assert.ok(e.t - (6500 + 1200 * i) <= 100, `${name}: punch ${i} at ${e.t}`); });
+    p.forEach((e, i) => assert.ok(q[i].t >= e.t && q[i].payload.hand === e.payload.hand, `${name}: path ${i}`));
+  }
+});
+
+test('dropping the guard, or swinging a forearm out on a still elbow, is not a punch', () => {
+  // the stance ends with both hands dropping out of the guard; a lone guard released the same way
+  const script = scriptMotion([moves.stance(5, 9, 'orthodox'), moves.guard(11, 13), moves.stance(15, 18, 'southpaw')]);
+  for (const [name, r] of Object.entries(runAll(script))) assert.deepEqual(punches(r), [], name);
 });
