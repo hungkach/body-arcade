@@ -136,3 +136,15 @@ test('the path: a rear hook sweeps in from the right, a lead hook from the left,
     assert.ok(Math.abs(jab[7][0] - jab[0][0]) < 0.25 && Math.abs(jab[7][1] - jab[0][1]) < 0.25, `${name}: a jab barely moves across the picture ${JSON.stringify(jab)}`);
   }
 });
+
+test('the rest of the clock: body hooks and an overhand are round side punches, one each, with their heights in the path', () => {
+  const script = scriptMotion([moves.stance(5, 16, 'orthodox'), moves.punch(7, 'left', 'bodyHook'), moves.punch(8.3, 'right', 'bodyHook'), moves.punch(9.6, 'right', 'overhand'), moves.punch(10.9, 'left', 'hook')]);
+  for (const [name, r] of Object.entries(runAll(script))) {
+    const ps = r.events.filter((e) => e.name === 'punch').map((e) => e.payload);
+    assert.deepEqual(ps.map((p) => `${p.hand}-${p.shape}-${p.arc}`), ['left-round-side', 'right-round-side', 'right-round-side', 'left-round-side'], name);
+    const lowest = (p) => Math.min(...p.path.map((q) => q[1])), highest = (p) => Math.max(...p.path.map((q) => q[1]) ) - p.path[0][1];
+    assert.ok(lowest(ps[0]) < -0.4 && lowest(ps[1]) < -0.4, `${name}: body hooks low ${lowest(ps[0])} ${lowest(ps[1])}`);
+    assert.ok(lowest(ps[3]) > -0.3, `${name}: a head hook stays up ${lowest(ps[3])}`);
+    assert.ok(highest(ps[2]) > 0.1 && highest(ps[3]) < 0.05, `${name}: the overhand rises over the guard ${highest(ps[2])}, the hook does not ${highest(ps[3])}`);
+  }
+});

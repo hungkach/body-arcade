@@ -297,6 +297,13 @@ const PUNCH_PATHS = {
   hook: [[0, GUARD], [0.1, HOOK_OUT], [0.24, HOOK_IN], [0.5, GUARD]],
   uppercut: [[0, GUARD], [0.12, UPPER_LOW], [0.26, UPPER_HIGH], [0.5, GUARD]],
   down: [[0, GUARD], [0.14, DOWN], [0.2, DOWN], [0.45, GUARD]],
+  // 0.16.0, the rest of the clock (Mark: what real strikes cover which hours): a straight to the
+  // body, a hook to the body, an overhand looping over the top and down, a shovel hook from low on
+  // the side up toward the chin
+  bodyStraight: [[0, GUARD], [0.12, { a: 0.15, f: 0.95, a2: 0.15, f2: 1.1 }], [0.18, { a: 0.15, f: 0.95, a2: 0.15, f2: 1.1 }], [0.4, GUARD]],
+  bodyHook: [[0, GUARD], [0.1, { a: 1.0, f: 0.15, a2: 0.6, f2: 1.2 }], [0.24, { a: 1.0, f: 0.9, a2: 0.6, f2: 1.2 }], [0.5, GUARD]],
+  overhand: [[0, GUARD], [0.1, { a: 2.0, f: 0.5, a2: 2.1, f2: 1.5 }], [0.26, { a: 1.35, f: 1.2, a2: 1.0, f2: 2.1 }], [0.5, GUARD]],
+  shovel: [[0, GUARD], [0.12, { a: 0.55, f: 0.25, a2: 0.9, f2: 1.3 }], [0.28, { a: 0.95, f: 0.8, a2: 2.0, f2: 1.9 }], [0.55, GUARD]],
 };
 const OVERHEAD = { a: 2.95, f: 0, a2: 3.05, f2: 0 };
 // 0.9.0: punches as people actually throw them on the first camera sessions (Mark 10/20: the
