@@ -322,6 +322,9 @@ const LOOSE_PATHS = {
   hook: [[0, GUARD], [0.1, { a: 1.05, f: 0.35, a2: 1.05, f2: 1.85 }], [0.26, { a: 1.05, f: 0.95, a2: 1.05, f2: 2.45 }], [0.55, GUARD]],
   shortHook: [[0, GUARD], [0.08, { a: 1.2, f: 0.5, a2: 1.2, f2: 2.0 }], [0.2, { a: 1.2, f: 1.0, a2: 1.2, f2: 2.5 }], [0.45, GUARD]],
   uppercut: [[0, GUARD], [0.1, { a: 0.2, f: 0.45, a2: 0.4, f2: 1.0 }], [0.24, UPPER_HIGH], [0.5, GUARD]],
+  // 0.22.0 (Mark, three sessions: "uppercut detection is not perfect"): an uppercut as most people throw
+  // one, with no dip first: the elbow stays in and the fist drives straight up the middle from the guard
+  shortUpper: [[0, GUARD], [0.16, { a: 0.55, f: 0.95, a2: Math.PI - 0.15, f2: 0.55 }], [0.45, GUARD]],
 };
 // 0.10.0: a tired, low guard (fists at the belly, elbows down; under the rules' guard height), and
 // a wide hook thrown nearly straight-armed (the rules call it a straight)
@@ -365,6 +368,12 @@ export const moves = {
     },
   }),
   // lean the upper body to one side and back (side: 'left' | 'right')
+  // 0.22.0: a slip as people throw one: the head off the line with the shoulders turning with it (yaw,
+  // radians, toward the side slipped to), fast
+  slipTurn: (start, end, side, angle = 0.3, yaw = 0.35) => ({
+    start, end, kind: 'lean', expected: { ['lean_' + side]: 1 },
+    apply(t, m) { const k = envelope(t, start, end, (end - start) / 2.5), sg = side === 'right' ? 1 : -1; m.lean = sg * angle * k; m.yaw = (m.yaw || 0) + sg * yaw * k; },
+  }),
   lean: (start, end, side, angle = 0.26) => ({
     start, end, kind: 'lean', expected: { ['lean_' + side]: 1 },
     apply(t, m) { m.lean = (side === 'right' ? 1 : -1) * angle * envelope(t, start, end, (end - start) / 2.5); },

@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { RE } from './helpers/engine.mjs';
-import { moves, scriptMotion, synthClip, BODIES, LOW_GUARD } from './helpers/synth.mjs';
+import { moves, scriptMotion, synthClip, BODIES, LOW_GUARD, HIGH_GUARD } from './helpers/synth.mjs';
 import { runScript, VARIANTS } from './helpers/run-clip.mjs';
 
 const runAll = (script, opts) => Object.fromEntries(Object.entries(VARIANTS).map(([name, v]) => [name, runScript(script, v, opts)]));
@@ -166,5 +166,30 @@ test('a punch lands as the fist leaves the zone: straights and hooks within 100 
 test('dropping the guard, or swinging a forearm out on a still elbow, is not a punch', () => {
   // the stance ends with both hands dropping out of the guard; a lone guard released the same way
   const script = scriptMotion([moves.stance(5, 9, 'orthodox'), moves.guard(11, 13), moves.stance(15, 18, 'southpaw')]);
+  for (const [name, r] of Object.entries(runAll(script))) assert.deepEqual(punches(r), [], name);
+});
+
+// 0.22.0 (Mark, 10/26 to 10/28: "uppercut detection is not perfect"; "slipping occasionally causes punches")
+test('an uppercut with no dip first (the elbow in, driven up the middle) is a rising round in every framing, both stances, squashed depth and every build', () => {
+  for (const stance of ['orthodox', 'southpaw']) {
+    const script = scriptMotion([moves.stance(5, 16, stance), moves.loosePunch(7, 'left', 'shortUpper'), moves.loosePunch(9, 'right', 'shortUpper'), moves.punch(11, 'left', 'straight'), moves.punch(13, 'right', 'straight')]);
+    const want = ['left-up', 'right-up', 'left-straight', 'right-straight'];
+    for (const [name, r] of Object.entries(runAll(script))) assert.deepEqual(punches(r), want, `${stance} ${name}`);
+    for (const [name, r] of Object.entries(runAll(script, { onFrame: squashDepth(0.3) }))) assert.deepEqual(punches(r), want, `${stance} ${name} squashed`);
+    for (const [bn, body] of Object.entries(BODIES)) assert.deepEqual(punches(runScript(script, Object.assign({ body }, VARIANTS.livingRoom))), want, `${stance} ${bn}`);
+  }
+});
+
+test('slips that turn the shoulders punch nothing; a counter thrown out of a slip still lands', () => {
+  const slips = scriptMotion([moves.stance(5, 26, 'orthodox'), ...[7, 9, 11, 13, 15, 17].map((t, i) => moves.slipTurn(t, t + 0.6, i % 2 ? 'right' : 'left', 0.3 + 0.05 * (i % 3), 0.25 + 0.15 * (i % 3))), moves.slipTurn(20, 20.4, 'left', 0.4, 0.5), moves.slipTurn(21, 21.4, 'right', 0.4, 0.5)]);
+  for (const [name, r] of Object.entries(runAll(slips))) assert.deepEqual(punches(r), [], name);
+  for (const [name, r] of Object.entries(runAll(slips, { onFrame: squashDepth(0.3) }))) assert.deepEqual(punches(r), [], `${name} squashed`);
+  const counters = scriptMotion([moves.stance(5, 16, 'orthodox'), moves.slipTurn(7, 7.8, 'left'), moves.punch(7.3, 'right', 'straight'), moves.slipTurn(10, 10.8, 'right'), moves.punch(10.3, 'left', 'hook'), moves.slipTurn(13, 13.8, 'left'), moves.loosePunch(13.3, 'right', 'shortUpper')]);
+  for (const [name, r] of Object.entries(runAll(counters))) assert.deepEqual(punches(r), ['right-straight', 'left-round', 'right-up'], name);
+});
+
+test('snapping a low guard up to a high guard is not an uppercut', () => {
+  const snap = (t0, hand) => ({ start: t0, end: t0 + 1.5, kind: 'arms', expected: {}, apply(t, m) { m[hand === 'left' ? 'armL' : 'armR'] = t - t0 < 0.7 ? LOW_GUARD : HIGH_GUARD; } });
+  const script = scriptMotion([moves.stance(5, 16, 'orthodox'), snap(7, 'left'), snap(9, 'right'), snap(11, 'left'), snap(11, 'right')]);
   for (const [name, r] of Object.entries(runAll(script))) assert.deepEqual(punches(r), [], name);
 });
