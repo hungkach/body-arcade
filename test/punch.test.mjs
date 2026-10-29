@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { RE } from './helpers/engine.mjs';
-import { moves, scriptMotion, synthClip, BODIES, LOW_GUARD, HIGH_GUARD } from './helpers/synth.mjs';
+import { moves, scriptMotion, synthClip, BODIES, LOW_GUARD, HIGH_GUARD, MID_GUARD } from './helpers/synth.mjs';
 import { runScript, VARIANTS } from './helpers/run-clip.mjs';
 
 const runAll = (script, opts) => Object.fromEntries(Object.entries(VARIANTS).map(([name, v]) => [name, runScript(script, v, opts)]));
@@ -192,4 +192,16 @@ test('snapping a low guard up to a high guard is not an uppercut', () => {
   const snap = (t0, hand) => ({ start: t0, end: t0 + 1.5, kind: 'arms', expected: {}, apply(t, m) { m[hand === 'left' ? 'armL' : 'armR'] = t - t0 < 0.7 ? LOW_GUARD : HIGH_GUARD; } });
   const script = scriptMotion([moves.stance(5, 16, 'orthodox'), snap(7, 'left'), snap(9, 'right'), snap(11, 'left'), snap(11, 'right')]);
   for (const [name, r] of Object.entries(runAll(script))) assert.deepEqual(punches(r), [], name);
+});
+
+// 0.23.0 (Mark 10/29: "most straights were read as rounds")
+test('straights from a guard held at the chest are straights: both hands, both stances, every framing, squashed depth and every build', () => {
+  const guardAt = (t0, t1) => ({ start: t0, end: t1, kind: 'arms', expected: {}, apply(t, m) { m.armL = MID_GUARD; m.armR = MID_GUARD; } });
+  for (const stance of ['orthodox', 'southpaw']) {
+    const script = scriptMotion([moves.stance(5, 16, stance), guardAt(6, 16), moves.midStraight(7, 'left'), moves.midStraight(9, 'right'), moves.midStraight(11, 'left'), moves.midStraight(13, 'right')]);
+    const want = ['left-straight', 'right-straight', 'left-straight', 'right-straight'];
+    for (const [name, r] of Object.entries(runAll(script))) assert.deepEqual(punches(r), want, `${stance} ${name}`);
+    for (const [name, r] of Object.entries(runAll(script, { onFrame: squashDepth(0.3) }))) assert.deepEqual(punches(r), want, `${stance} ${name} squashed`);
+    for (const [bn, body] of Object.entries(BODIES)) assert.deepEqual(punches(runScript(script, Object.assign({ body }, VARIANTS.livingRoom))), want, `${stance} ${bn}`);
+  }
 });

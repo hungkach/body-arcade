@@ -328,6 +328,7 @@ const LOOSE_PATHS = {
 };
 // 0.10.0: a tired, low guard (fists at the belly, elbows down; under the rules' guard height), and
 // a wide hook thrown nearly straight-armed (the rules call it a straight)
+export const MID_GUARD = { a: 0.18, f: 0.42, a2: Math.PI + 0.48, f2: 1.0 }; // 0.23.0: fists at the chest
 export const LOW_GUARD = { a: 0.1, f: 0.3, a2: Math.PI + 0.4, f2: 1.9 };
 const WIDE_HOOK = [[0, GUARD], [0.12, { a: Math.PI / 2 - 0.1, f: 0.25, a2: Math.PI / 2 - 0.1, f2: 0.5 }], [0.28, { a: Math.PI / 2 - 0.1, f: 1.2, a2: Math.PI / 2 - 0.1, f2: 1.5 }], [0.55, GUARD]];
 // arms moving the whole time between start and end (a quick ramp in and out from hanging)
@@ -450,6 +451,11 @@ export const moves = {
     const keys = PUNCH_PATHS[type].map(([k, p], i, all) => [k, i === 0 || i === all.length - 1 ? from : p]);
     const path = armPath(keys), dur = keys[keys.length - 1][0];
     return { start: t0, end: t0 + dur, kind: 'strike', expected: { strike: 1 }, apply(t, m) { m[hand === 'left' ? 'armL' : 'armR'] = path(t - t0); } };
+  },
+  // 0.23.0: a straight from a guard held at the chest (a tired guard), and back to it
+  midStraight: (t0, hand) => {
+    const path = armPath([[0, MID_GUARD], [0.12, STRAIGHT], [0.18, STRAIGHT], [0.4, MID_GUARD]]);
+    return { start: t0, end: t0 + 0.4, kind: 'strike', expected: { strike: 1 }, apply(t, m) { m[hand === 'left' ? 'armL' : 'armR'] = path(t - t0); } };
   },
   wideHook: (t0, hand) => {
     const path = armPath(WIDE_HOOK), dur = WIDE_HOOK[WIDE_HOOK.length - 1][0];
