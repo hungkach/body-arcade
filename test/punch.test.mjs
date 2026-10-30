@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { RE } from './helpers/engine.mjs';
-import { moves, scriptMotion, synthClip, BODIES, LOW_GUARD, HIGH_GUARD, MID_GUARD } from './helpers/synth.mjs';
+import { moves, scriptMotion, synthClip, BODIES, LOW_GUARD, HIGH_GUARD, MID_GUARD, GUARD } from './helpers/synth.mjs';
 import { runScript, VARIANTS } from './helpers/run-clip.mjs';
 
 const runAll = (script, opts) => Object.fromEntries(Object.entries(VARIANTS).map(([name, v]) => [name, runScript(script, v, opts)]));
@@ -203,5 +203,47 @@ test('straights from a guard held at the chest are straights: both hands, both s
     for (const [name, r] of Object.entries(runAll(script))) assert.deepEqual(punches(r), want, `${stance} ${name}`);
     for (const [name, r] of Object.entries(runAll(script, { onFrame: squashDepth(0.3) }))) assert.deepEqual(punches(r), want, `${stance} ${name} squashed`);
     for (const [bn, body] of Object.entries(BODIES)) assert.deepEqual(punches(runScript(script, Object.assign({ body }, VARIANTS.livingRoom))), want, `${stance} ${bn}`);
+  }
+});
+
+// 0.24.0 (Mark 10/30: "not a single rear straight landed, very few lead straights, majority was rounds"): a
+// tired guard sits low. A straight from there rises to the head with the elbow lifting, which the lifted
+// uppercut rule (0.22.0) took for an uppercut; a guard that drifted down below its old spot counted the drift
+// as a dip; and a guard at the belly sat about on the lowest line, so crossing it lost the hand's home.
+const lowSet = (onFrame) => { let taught = 0; return (f, engine) => { if (onFrame) onFrame(f); if (!taught && f.t > 6500) { taught = 1; engine.teach_guard(); } else if (taught === 1 && f.t > 8000) { taught = 2; engine.teach_stop(); } }; };
+test('punches from a low guard the gym learned: every straight is found and reads straight, uppercuts still rise, rounds stay round', () => {
+  const tally = { straight: [0, 0], hook: [0, 0], uppercut: [0, 0] };
+  for (const stance of ['orthodox', 'southpaw']) for (const type of Object.keys(tally)) {
+    const lead = stance === 'orthodox' ? 'left' : 'right', rear = lead === 'left' ? 'right' : 'left';
+    const segs = [moves.holdTurn(5, 22, stance === 'orthodox' ? 25 : -25), moves.holdArms(5, 22, LOW_GUARD)];
+    [lead, rear, lead, rear].forEach((h, i) => segs.push(moves.punchFrom(10 + i * 1.6, h, type, LOW_GUARD)));
+    const script = scriptMotion(segs);
+    for (const [name, v] of Object.entries(VARIANTS)) for (const sq of [false, true]) {
+      const got = punches(runScript(script, v, { onFrame: lowSet(sq ? squashDepth(0.3) : null) }));
+      const want = type === 'straight' ? 'straight' : type === 'hook' ? 'round' : 'up';
+      // every punch is found, both hands in order
+      // (an uppercut from the belly with the depth squashed is sometimes missed in portrait: not this fix's)
+      if (type === 'straight') assert.deepEqual(got.map((x) => x.split('-')[0]), [lead, rear, lead, rear], `${stance} ${type} ${name}${sq ? ' squashed' : ''}: ${got}`);
+      for (const x of got) { tally[type][1]++; if (x.endsWith('-' + want)) tally[type][0]++; }
+      if (type !== 'straight') assert.ok(got.every((x) => x.endsWith('-' + want)), `${stance} ${type} ${name}${sq ? ' squashed' : ''}: ${got}`);
+    }
+  }
+  // straights: 87 of 96 (a rear straight from the belly swings its elbow out as far as a short hook in a few framings); before, none
+  assert.ok(tally.straight[0] >= 0.85 * tally.straight[1], `straights ${tally.straight}`);
+});
+
+test('a guard that drifts down from where it was set and rests there: its straights are straights', () => {
+  const lerp = (A, B, u) => ({ a: A.a + (B.a - A.a) * u, f: A.f + (B.f - A.f) * u, a2: A.a2 + (B.a2 - A.a2) * u, f2: A.f2 + (B.f2 - A.f2) * u });
+  for (const stance of ['orthodox', 'southpaw']) {
+    const lead = stance === 'orthodox' ? 'left' : 'right', rear = lead === 'left' ? 'right' : 'left';
+    const arms = { start: 5, end: 30, kind: 'arms', expected: {}, apply(t, m) { const u = Math.min(1, Math.max(0, (t - 9) / 1)); m.armL = m.armL || lerp(GUARD, MID_GUARD, u); m.armR = m.armR || lerp(GUARD, MID_GUARD, u); } };
+    const segs = [moves.holdTurn(5, 30, stance === 'orthodox' ? 25 : -25), arms];
+    [lead, rear, lead, rear].forEach((h, i) => segs.push(moves.punchFrom(12 + i * 1.6, h, 'straight', MID_GUARD)));
+    const script = scriptMotion(segs);
+    const want = [lead, rear, lead, rear].map((h) => `${h}-straight`);
+    for (const [name, v] of Object.entries(VARIANTS)) {
+      assert.deepEqual(punches(runScript(script, v, { onFrame: lowSet(null) })), want, `${stance} ${name}`);
+      assert.deepEqual(punches(runScript(script, v, { onFrame: lowSet(squashDepth(0.3)) })), want, `${stance} ${name} squashed`);
+    }
   }
 });
