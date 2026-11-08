@@ -268,7 +268,7 @@ test('the tracker throwing a wrist out for a frame or two during slips is not a 
     if (n < 3) assert.deepEqual(got, [], `${n} frames ${dx},${dz} ${name}${sq ? ' squashed' : ''}`);
     else three += got.length;
   }
-  // three frames (100 ms): 4 strays in 162 slips (before, 46 for two and three frames)
+  // three frames (100 ms): 4 stray punches in 216 slips (before, 36; two frames, 10 before)
   assert.ok(three <= 5, `three-frame jumps: ${three}`);
   const counters = scriptMotion([moves.stance(5, 16, 'orthodox'), moves.slipTurn(7, 7.8, 'left'), moves.punch(7.3, 'right', 'straight'), moves.slipTurn(10, 10.8, 'right'), moves.punch(10.3, 'left', 'hook'), moves.slipTurn(13, 13.8, 'left'), moves.loosePunch(13.3, 'right', 'shortUpper')]);
   for (const [name, r] of Object.entries(runAll(counters))) assert.deepEqual(punches(r), ['right-straight', 'left-round', 'right-up'], name);
