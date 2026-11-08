@@ -247,3 +247,31 @@ test('a guard that drifts down from where it was set and rests there: its straig
     }
   }
 });
+
+// 0.25.0 (Mark 11/1 to 11/5: "strikes are being detected from head movement"): in a fast slip the tracker can throw
+// a wrist out of the pillar for two or three frames. While the head moves, a fist out the front or a side has to stay
+// out strictExitMs to land, so the jump is not a punch, and a counter thrown out of a slip still lands.
+test('the tracker throwing a wrist out for a frame or two during slips is not a punch; counters out of a slip still land', () => {
+  const jump = (times, nFrames, dxM, dzM) => { const left = {}; return (f) => {
+    for (const [i, t0] of times.entries()) if (f.t >= t0 * 1000 && (left[i] ?? nFrames) > 0) {
+      left[i] = (left[i] ?? nFrames) - 1;
+      const hand = i % 2 ? 16 : 15, sg = hand === 16 ? 1 : -1, r = (f.lm[12][0] - f.lm[11][0]) / (f.wl[12][0] - f.wl[11][0]);
+      for (const [j, k] of [[hand, 1], [hand - 2, 0.5]]) { f.wl[j][0] += sg * dxM * k; f.wl[j][2] += dzM * k; f.lm[j][0] += sg * dxM * k * r; }
+    }
+  }; };
+  const times = [7.25, 9.25, 11.25, 13.25, 15.25, 17.25];
+  const slips = scriptMotion([moves.stance(5, 26, 'orthodox'), ...[7, 9, 11, 13, 15, 17].map((t, i) => moves.slipTurn(t, t + 0.6, i % 2 ? 'right' : 'left', 0.3 + 0.05 * (i % 3), 0.25 + 0.15 * (i % 3)))]);
+  let three = 0;
+  for (const n of [1, 2, 3]) for (const [dx, dz] of [[0.25, 0], [0, -0.25], [0.2, -0.2]]) for (const [name, v] of Object.entries(VARIANTS)) for (const sq of [false, true]) {
+    const j = jump(times, n, dx, dz);
+    const got = punches(runScript(slips, v, { onFrame: (f) => { if (sq) squashDepth(0.3)(f); j(f); } }));
+    if (n < 3) assert.deepEqual(got, [], `${n} frames ${dx},${dz} ${name}${sq ? ' squashed' : ''}`);
+    else three += got.length;
+  }
+  // three frames (100 ms): 4 strays in 162 slips (before, 46 for two and three frames)
+  assert.ok(three <= 5, `three-frame jumps: ${three}`);
+  const counters = scriptMotion([moves.stance(5, 16, 'orthodox'), moves.slipTurn(7, 7.8, 'left'), moves.punch(7.3, 'right', 'straight'), moves.slipTurn(10, 10.8, 'right'), moves.punch(10.3, 'left', 'hook'), moves.slipTurn(13, 13.8, 'left'), moves.loosePunch(13.3, 'right', 'shortUpper')]);
+  for (const [name, r] of Object.entries(runAll(counters))) assert.deepEqual(punches(r), ['right-straight', 'left-round', 'right-up'], name);
+  // (squashed, the living room framing missed this short uppercut before 0.25.0 too)
+  for (const [name, r] of Object.entries(runAll(counters, { onFrame: squashDepth(0.3) }))) assert.deepEqual(punches(r), name === 'livingRoom' ? ['right-straight', 'left-round'] : ['right-straight', 'left-round', 'right-up'], `${name} squashed`);
+});
